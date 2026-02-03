@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check out current repo
+        uses: actions/checkout@v4
+
       - name: Check out agentic-test-generation-java repo
         uses: actions/checkout@v4
         with:
@@ -29,6 +32,12 @@ jobs:
       - name: Build with Maven
         working-directory: agentic-test-generation-java
         run: mvn -ntp -DskipTests package spring-boot:repackage
+
+      - name: Run scan-generate-tests.sh against current repo
+        working-directory: agentic-test-generation-java
+        run: |
+          chmod +x ./scan-generate-tests.sh
+          ./scan-generate-tests.sh "$GITHUB_WORKSPACE"
 
       - name: List built JARs
         working-directory: agentic-test-generation-java
