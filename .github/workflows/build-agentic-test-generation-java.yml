@@ -16,6 +16,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: BayRockLabs/agentic-test-generation-java
+          ref: main
+          token: ${{ secrets.AGENTIC_REPO_TOKEN }}
           path: agentic-test-generation-java
 
       - name: Set up JDK 17
