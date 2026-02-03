@@ -33,11 +33,11 @@ jobs:
         working-directory: agentic-test-generation-java
         run: mvn -ntp -DskipTests package spring-boot:repackage
 
-      - name: Run scan-generate-tests.sh against current repo
+      - name: Run generate-tests.sh against current repo
         working-directory: agentic-test-generation-java
         run: |
-          chmod +x ./scan-generate-tests.sh
-          ./scan-generate-tests.sh "$GITHUB_WORKSPACE"
+          chmod +x ./generate-tests.sh
+          ./generate-tests.sh "$GITHUB_WORKSPACE"
 
       - name: List built JARs
         working-directory: agentic-test-generation-java
