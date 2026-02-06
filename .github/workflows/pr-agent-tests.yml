@@ -1,0 +1,129 @@
+name: PR Agent Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull Request number
+        required: true
+        type: string
+      head_sha:
+        description: PR head sha
+        required: true
+        type: string
+      agent_run_id:
+        description: Agent run id
+        required: true
+        type: string
+      detected_stack:
+        description: JSON string describing detected stack
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse detected stack
+        id: stack
+        shell: bash
+        run: |
+          echo "detected_stack=${{ inputs.detected_stack }}" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.PR_AGENT_AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Run tests
+        id: tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          STACK='${{ inputs.detected_stack }}'
+          echo "$STACK" > detected_stack.json
+
+          LANG=$(python -c "import json; print(json.load(open('detected_stack.json')).get('language',''))")
+          FW=$(python -c "import json; print(json.load(open('detected_stack.json')).get('framework',''))")
+
+          mkdir -p pr-agent-artifacts
+
+          if [ "$LANG" = "java" ]; then
+            mvn -q test
+            # best-effort jacoco path
+            if [ -f target/site/jacoco/jacoco.xml ]; then
+              cp target/site/jacoco/jacoco.xml pr-agent-artifacts/jacoco.xml
+            fi
+          elif [ "$LANG" = "node" ]; then
+            npm ci
+            npm test -- --coverage || npm test || true
+            if [ -f coverage/coverage-final.json ]; then
+              cp coverage/coverage-final.json pr-agent-artifacts/istanbul.json
+            fi
+          elif [ "$LANG" = "python" ]; then
+            python -m pip install -r requirements.txt || true
+            pytest --maxfail=1 --disable-warnings -q --cov --cov-report=xml || pytest -q || true
+            if [ -f coverage.xml ]; then
+              cp coverage.xml pr-agent-artifacts/coverage.xml
+            fi
+          else
+            echo "Unknown language '$LANG'" >&2
+            exit 2
+          fi
+
+      - name: Upload artifacts to S3
+        id: upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT_KEY="pr-agent/${{ inputs.agent_run_id }}/artifacts"
+          ARTIFACT_OBJECT_KEY="$ARTIFACT_KEY/pr-agent-artifacts.tgz"
+          echo "artifact_key=$ARTIFACT_KEY" >> $GITHUB_OUTPUT
+          echo "artifact_object_key=$ARTIFACT_OBJECT_KEY" >> $GITHUB_OUTPUT
+          tar -czf pr-agent-artifacts.tgz -C pr-agent-artifacts .
+          aws s3 cp pr-agent-artifacts.tgz "s3://${{ secrets.PR_AGENT_S3_BUCKET }}/$ARTIFACT_OBJECT_KEY"
+
+      - name: Callback to PR Agent
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS="success"
+          if [ "${{ steps.tests.outcome }}" != "success" ]; then
+            STATUS="failure"
+          fi
+
+          BODY=$(cat <<'JSON'
+          {
+            "agent_run_id": "${{ inputs.agent_run_id }}",
+            "pr_number": "${{ inputs.pr_number }}",
+            "head_sha": "${{ inputs.head_sha }}",
+            "status": "__STATUS__",
+            "artifact_key": "${{ steps.upload.outputs.artifact_key }}",
+            "artifact_bucket": "${{ secrets.PR_AGENT_S3_BUCKET }}",
+            "artifact_object_key": "${{ steps.upload.outputs.artifact_object_key }}",
+            "detected_stack": ${{ inputs.detected_stack }}
+          }
+JSON
+          )
+          BODY=${BODY/__STATUS__/$STATUS}
+
+          SIG=$(python - <<'PY'
+import hmac, hashlib, os, sys
+secret = os.environ.get('CALLBACK_SECRET','').encode('utf-8')
+body = sys.stdin.read().encode('utf-8')
+print(hmac.new(secret, body, hashlib.sha256).hexdigest())
+PY
+          <<< "$BODY")
+
+          curl -sS -X POST             -H "Content-Type: application/json"             -H "X-PR-Agent-Signature: sha256=$SIG"             -d "$BODY"             "https://7jsur28fwi.execute-api.us-east-1.amazonaws.com/workflow-callback"
+        env:
+          CALLBACK_SECRET: ${{ secrets.PR_AGENT_CALLBACK_SECRET }}
