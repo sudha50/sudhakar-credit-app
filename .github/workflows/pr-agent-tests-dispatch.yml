@@ -1,6 +1,6 @@
 name: PR Agent Tests
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       pr_number:
