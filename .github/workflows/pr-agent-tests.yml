@@ -35,12 +35,12 @@ jobs:
         id: stack
         shell: bash
         run: |
-          echo "detected_stack=${{ inputs.detected_stack }}" >> $GITHUB_OUTPUT
+          echo "detected_stack=${{{{ inputs.detected_stack }}}}" >> $GITHUB_OUTPUT
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.PR_AGENT_AWS_ROLE_ARN }}
+          role-to-assume: ${{{{ secrets.PR_AGENT_AWS_ROLE_ARN }}}}
           aws-region: us-east-1
 
       - name: Run tests
@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          STACK='${{ inputs.detected_stack }}'
+          STACK='${{{{ inputs.detected_stack }}}}'
           echo "$STACK" > detected_stack.json
 
           LANG=$(python -c "import json; print(json.load(open('detected_stack.json')).get('language',''))")
@@ -84,12 +84,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ARTIFACT_KEY="pr-agent/${{ inputs.agent_run_id }}/artifacts"
+          ARTIFACT_KEY="pr-agent/${{{{ inputs.agent_run_id }}}}/artifacts"
           ARTIFACT_OBJECT_KEY="$ARTIFACT_KEY/pr-agent-artifacts.tgz"
           echo "artifact_key=$ARTIFACT_KEY" >> $GITHUB_OUTPUT
           echo "artifact_object_key=$ARTIFACT_OBJECT_KEY" >> $GITHUB_OUTPUT
           tar -czf pr-agent-artifacts.tgz -C pr-agent-artifacts .
-          aws s3 cp pr-agent-artifacts.tgz "s3://${{ secrets.PR_AGENT_S3_BUCKET }}/$ARTIFACT_OBJECT_KEY"
+          aws s3 cp pr-agent-artifacts.tgz "s3://${{{{ secrets.PR_AGENT_S3_BUCKET }}}}/$ARTIFACT_OBJECT_KEY"
 
       - name: Callback to PR Agent
         if: always()
@@ -97,24 +97,45 @@ jobs:
         run: |
           set -euo pipefail
           STATUS="success"
-          if [ "${{ steps.tests.outcome }}" != "success" ]; then
+          if [ "${{{{ steps.tests.outcome }}}}" != "success" ]; then
             STATUS="failure"
           fi
 
-          BODY=$(cat <<'JSON'
-          {
-            "agent_run_id": "${{ inputs.agent_run_id }}",
-            "pr_number": "${{ inputs.pr_number }}",
-            "head_sha": "${{ inputs.head_sha }}",
-            "status": "__STATUS__",
-            "artifact_key": "${{ steps.upload.outputs.artifact_key }}",
-            "artifact_bucket": "${{ secrets.PR_AGENT_S3_BUCKET }}",
-            "artifact_object_key": "${{ steps.upload.outputs.artifact_object_key }}",
-            "detected_stack": ${{ inputs.detected_stack }}
-          }
-JSON
+          export PR_AGENT_RUN_ID="${{{{ inputs.agent_run_id }}}}"
+          export PR_AGENT_PR_NUMBER="${{{{ inputs.pr_number }}}}"
+          export PR_AGENT_HEAD_SHA="${{{{ inputs.head_sha }}}}"
+          export PR_AGENT_STATUS="$STATUS"
+          export PR_AGENT_ARTIFACT_KEY="${{{{ steps.upload.outputs.artifact_key }}}}"
+          export PR_AGENT_ARTIFACT_BUCKET="${{{{ secrets.PR_AGENT_S3_BUCKET }}}}"
+          export PR_AGENT_ARTIFACT_OBJECT_KEY="${{{{ steps.upload.outputs.artifact_object_key }}}}"
+          export PR_AGENT_DETECTED_STACK='${{{{ inputs.detected_stack }}}}'
+
+          BODY=$(python - <<'PY'
+import json
+import os
+
+detected_stack_raw = os.environ.get("PR_AGENT_DETECTED_STACK", "{}")
+try:
+    detected_stack = json.loads(detected_stack_raw)
+except Exception:
+    detected_stack = {"raw": detected_stack_raw}
+
+print(
+    json.dumps(
+        {
+            "agent_run_id": os.environ.get("PR_AGENT_RUN_ID", ""),
+            "pr_number": os.environ.get("PR_AGENT_PR_NUMBER", ""),
+            "head_sha": os.environ.get("PR_AGENT_HEAD_SHA", ""),
+            "status": os.environ.get("PR_AGENT_STATUS", ""),
+            "artifact_key": os.environ.get("PR_AGENT_ARTIFACT_KEY", ""),
+            "artifact_bucket": os.environ.get("PR_AGENT_ARTIFACT_BUCKET", ""),
+            "artifact_object_key": os.environ.get("PR_AGENT_ARTIFACT_OBJECT_KEY", ""),
+            "detected_stack": detected_stack,
+        }
+    )
+)
+PY
           )
-          BODY=${BODY/__STATUS__/$STATUS}
 
           SIG=$(python - <<'PY'
 import hmac, hashlib, os, sys
@@ -126,4 +147,4 @@ PY
 
           curl -sS -X POST             -H "Content-Type: application/json"             -H "X-PR-Agent-Signature: sha256=$SIG"             -d "$BODY"             "https://7jsur28fwi.execute-api.us-east-1.amazonaws.com/workflow-callback"
         env:
-          CALLBACK_SECRET: ${{ secrets.PR_AGENT_CALLBACK_SECRET }}
+          CALLBACK_SECRET: ${{{{ secrets.PR_AGENT_CALLBACK_SECRET }}}}
