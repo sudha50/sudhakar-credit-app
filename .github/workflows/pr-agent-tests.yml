@@ -110,40 +110,9 @@ jobs:
           export PR_AGENT_ARTIFACT_OBJECT_KEY="${{{{ steps.upload.outputs.artifact_object_key }}}}"
           export PR_AGENT_DETECTED_STACK='${{{{ inputs.detected_stack }}}}'
 
-          BODY=$(python - <<'PY'
-import json
-import os
+          BODY=$(python -c "import json,os; raw=os.environ.get('PR_AGENT_DETECTED_STACK','{}'); ds=json.loads(raw) if raw else {}; print(json.dumps({'agent_run_id':os.environ.get('PR_AGENT_RUN_ID',''), 'pr_number':os.environ.get('PR_AGENT_PR_NUMBER',''), 'head_sha':os.environ.get('PR_AGENT_HEAD_SHA',''), 'status':os.environ.get('PR_AGENT_STATUS',''), 'artifact_key':os.environ.get('PR_AGENT_ARTIFACT_KEY',''), 'artifact_bucket':os.environ.get('PR_AGENT_ARTIFACT_BUCKET',''), 'artifact_object_key':os.environ.get('PR_AGENT_ARTIFACT_OBJECT_KEY',''), 'detected_stack':ds}))" 2>/dev/null || python -c "import json,os; raw=os.environ.get('PR_AGENT_DETECTED_STACK','{}'); print(json.dumps({'agent_run_id':os.environ.get('PR_AGENT_RUN_ID',''), 'pr_number':os.environ.get('PR_AGENT_PR_NUMBER',''), 'head_sha':os.environ.get('PR_AGENT_HEAD_SHA',''), 'status':os.environ.get('PR_AGENT_STATUS',''), 'artifact_key':os.environ.get('PR_AGENT_ARTIFACT_KEY',''), 'artifact_bucket':os.environ.get('PR_AGENT_ARTIFACT_BUCKET',''), 'artifact_object_key':os.environ.get('PR_AGENT_ARTIFACT_OBJECT_KEY',''), 'detected_stack':{'raw':raw}}))")
 
-detected_stack_raw = os.environ.get("PR_AGENT_DETECTED_STACK", "{}")
-try:
-    detected_stack = json.loads(detected_stack_raw)
-except Exception:
-    detected_stack = {"raw": detected_stack_raw}
-
-print(
-    json.dumps(
-        {
-            "agent_run_id": os.environ.get("PR_AGENT_RUN_ID", ""),
-            "pr_number": os.environ.get("PR_AGENT_PR_NUMBER", ""),
-            "head_sha": os.environ.get("PR_AGENT_HEAD_SHA", ""),
-            "status": os.environ.get("PR_AGENT_STATUS", ""),
-            "artifact_key": os.environ.get("PR_AGENT_ARTIFACT_KEY", ""),
-            "artifact_bucket": os.environ.get("PR_AGENT_ARTIFACT_BUCKET", ""),
-            "artifact_object_key": os.environ.get("PR_AGENT_ARTIFACT_OBJECT_KEY", ""),
-            "detected_stack": detected_stack,
-        }
-    )
-)
-PY
-          )
-
-          SIG=$(python - <<'PY'
-import hmac, hashlib, os, sys
-secret = os.environ.get('CALLBACK_SECRET','').encode('utf-8')
-body = sys.stdin.read().encode('utf-8')
-print(hmac.new(secret, body, hashlib.sha256).hexdigest())
-PY
-          <<< "$BODY")
+          SIG=$(python -c "import hmac,hashlib,os,sys; secret=os.environ.get('CALLBACK_SECRET','').encode('utf-8'); body=sys.stdin.read().encode('utf-8'); print(hmac.new(secret, body, hashlib.sha256).hexdigest())" <<< "$BODY")
 
           curl -sS -X POST             -H "Content-Type: application/json"             -H "X-PR-Agent-Signature: sha256=$SIG"             -d "$BODY"             "https://7jsur28fwi.execute-api.us-east-1.amazonaws.com/workflow-callback"
         env:
