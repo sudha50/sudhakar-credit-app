@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "10"
+  PR_AGENT_TEMPLATE_VERSION: "11"
 
 jobs:
   run-tests:
@@ -144,6 +144,92 @@ jobs:
               print(f'JaCoCo injection skipped: {e}', file=sys.stderr)
           JACOCO_PYEOF
             fi
+            # Inject test dependencies based on detected stack (version-aware)
+            python3 <<'TESTDEPS_PYEOF' || true
+          import xml.etree.ElementTree as ET, json, sys
+          try:
+              MAVEN_NS = 'http://maven.apache.org/POM/4.0.0'
+              ET.register_namespace('', MAVEN_NS)
+
+              # Read detected stack for version-aware dependency selection
+              stack = {}
+              try:
+                  with open('detected_stack.json') as f:
+                      stack = json.load(f)
+              except Exception:
+                  pass
+
+              test_fw = (stack.get('test_framework') or '').lower()
+              java_ver_str = str(stack.get('version') or '17')
+              try:
+                  java_major = int(java_ver_str.split('.')[0])
+              except (ValueError, IndexError):
+                  java_major = 17
+
+              # Detect if Spring Boot is used (parent or dependency)
+              pom_text = ''
+              try:
+                  with open('pom.xml') as f:
+                      pom_text = f.read()
+              except Exception:
+                  pass
+              has_spring_boot = 'spring-boot' in pom_text.lower() or bool(stack.get('spring_boot_version'))
+
+              # Build version-compatible dependency list
+              # Mockito 5+ requires Java 11+; fall back to Mockito 4 for Java 8
+              mockito_ver = '5.11.0' if java_major >= 11 else '4.11.0'
+              needed = []
+
+              if test_fw == 'testng':
+                  needed.append(('org.testng', 'testng', '7.9.0'))
+              elif test_fw == 'junit4':
+                  needed.append(('junit', 'junit', '4.13.2'))
+                  needed.append(('org.mockito', 'mockito-core', mockito_ver))
+              else:
+                  # Default: JUnit 5 (junit5 or unknown)
+                  junit5_ver = '5.10.2' if java_major >= 11 else '5.9.3'
+                  needed.append(('org.junit.jupiter', 'junit-jupiter', junit5_ver))
+                  needed.append(('org.mockito', 'mockito-core', mockito_ver))
+                  needed.append(('org.mockito', 'mockito-junit-jupiter', mockito_ver))
+
+              # Only inject spring-boot-starter-test if Spring Boot is detected
+              if has_spring_boot:
+                  needed.append(('org.springframework.boot', 'spring-boot-starter-test', None))
+
+              tree = ET.parse('pom.xml')
+              root = tree.getroot()
+              ns = root.tag.split('}')[0] + '}' if '{' in root.tag else ''
+              deps = root.find(f'{ns}dependencies')
+              if deps is None:
+                  deps = ET.SubElement(root, f'{ns}dependencies')
+
+              # Collect existing (groupId, artifactId) pairs
+              existing = set()
+              for d in deps.findall(f'{ns}dependency'):
+                  g = (d.findtext(f'{ns}groupId') or '').strip()
+                  a = (d.findtext(f'{ns}artifactId') or '').strip()
+                  if g and a:
+                      existing.add((g, a))
+
+              added = []
+              for gid, aid, ver in needed:
+                  if (gid, aid) not in existing:
+                      dep = ET.SubElement(deps, f'{ns}dependency')
+                      ET.SubElement(dep, f'{ns}groupId').text = gid
+                      ET.SubElement(dep, f'{ns}artifactId').text = aid
+                      if ver:
+                          ET.SubElement(dep, f'{ns}version').text = ver
+                      ET.SubElement(dep, f'{ns}scope').text = 'test'
+                      added.append(f'{aid}:{ver or "managed"}')
+
+              if added:
+                  tree.write('pom.xml', xml_declaration=True, encoding='UTF-8')
+                  print(f'Test deps injected (java={java_major}, fw={test_fw or "junit5"}): {", ".join(added)}')
+              else:
+                  print('All test deps already present')
+          except Exception as e:
+              print(f'Test dep injection skipped: {e}', file=sys.stderr)
+          TESTDEPS_PYEOF
             mvn -q test
             # Collect JaCoCo coverage reports
             for JACOCO_PATH in target/site/jacoco/jacoco.xml target/jacoco.xml; do
