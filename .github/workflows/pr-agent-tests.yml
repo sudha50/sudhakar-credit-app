@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "13"
+  PR_AGENT_TEMPLATE_VERSION: "14"
 
 jobs:
   run-tests:
@@ -109,39 +109,48 @@ jobs:
           mkdir -p pr-agent-artifacts
 
           if [ "$LANG" = "java" ]; then
-            # Inject JaCoCo plugin if not already present in pom.xml
+            # Inject JaCoCo plugin via string insertion (preserves pom.xml structure)
             if ! grep -q 'jacoco-maven-plugin' pom.xml 2>/dev/null; then
               python3 <<'JACOCO_PYEOF' || true
-          import xml.etree.ElementTree as ET, sys
+          import sys
           try:
-              # Register the default Maven namespace so ET.write() does not
-              # prefix elements with ns0: (which corrupts the POM for Maven).
-              MAVEN_NS = 'http://maven.apache.org/POM/4.0.0'
-              ET.register_namespace('', MAVEN_NS)
-              tree = ET.parse('pom.xml')
-              root = tree.getroot()
-              ns = root.tag.split('}')[0] + '}' if '{' in root.tag else ''
-              build = root.find(f'{ns}build')
-              if build is None:
-                  build = ET.SubElement(root, f'{ns}build')
-              plugins = build.find(f'{ns}plugins')
-              if plugins is None:
-                  plugins = ET.SubElement(build, f'{ns}plugins')
-              p = ET.SubElement(plugins, f'{ns}plugin')
-              ET.SubElement(p, f'{ns}groupId').text = 'org.jacoco'
-              ET.SubElement(p, f'{ns}artifactId').text = 'jacoco-maven-plugin'
-              ET.SubElement(p, f'{ns}version').text = '0.8.11'
-              execs = ET.SubElement(p, f'{ns}executions')
-              for goal_id, goal_name, phase in [('prepare-agent','prepare-agent','initialize'),('report','report','test')]:
-                  ex = ET.SubElement(execs, f'{ns}execution')
-                  ET.SubElement(ex, f'{ns}id').text = goal_id
-                  goals = ET.SubElement(ex, f'{ns}goals')
-                  ET.SubElement(goals, f'{ns}goal').text = goal_name
-                  ET.SubElement(ex, f'{ns}phase').text = phase
-              tree.write('pom.xml', xml_declaration=True, encoding='UTF-8')
+              with open('pom.xml', 'r') as f:
+                  pom = f.read()
+              NL = chr(10)
+              plugin_xml = (
+                  NL + '      <plugin>'
+                  + NL + '        <groupId>org.jacoco</groupId>'
+                  + NL + '        <artifactId>jacoco-maven-plugin</artifactId>'
+                  + NL + '        <version>0.8.11</version>'
+                  + NL + '        <executions>'
+                  + NL + '          <execution>'
+                  + NL + '            <id>prepare-agent</id>'
+                  + NL + '            <goals><goal>prepare-agent</goal></goals>'
+                  + NL + '            <phase>initialize</phase>'
+                  + NL + '          </execution>'
+                  + NL + '          <execution>'
+                  + NL + '            <id>report</id>'
+                  + NL + '            <goals><goal>report</goal></goals>'
+                  + NL + '            <phase>test</phase>'
+                  + NL + '          </execution>'
+                  + NL + '        </executions>'
+                  + NL + '      </plugin>')
+              idx = pom.rfind('</plugins>')
+              if idx != -1:
+                  pom = pom[:idx] + plugin_xml + NL + '    ' + pom[idx:]
+              else:
+                  idx = pom.rfind('</build>')
+                  if idx != -1:
+                      pom = pom[:idx] + '  <plugins>' + plugin_xml + NL + '    </plugins>' + NL + '  ' + pom[idx:]
+                  else:
+                      idx = pom.rfind('</project>')
+                      if idx != -1:
+                          pom = pom[:idx] + '  <build>' + NL + '    <plugins>' + plugin_xml + NL + '    </plugins>' + NL + '  </build>' + NL + pom[idx:]
+              with open('pom.xml', 'w') as f:
+                  f.write(pom)
               print('JaCoCo plugin injected')
           except Exception as e:
-              print(f'JaCoCo injection skipped: {e}', file=sys.stderr)
+              print('JaCoCo injection skipped: ' + str(e), file=sys.stderr)
           JACOCO_PYEOF
             fi
             # Inject test dependencies via string insertion (preserves pom.xml structure)
@@ -239,11 +248,13 @@ jobs:
           except Exception as e:
               print('Test dep injection skipped: ' + str(e), file=sys.stderr)
           TESTDEPS_PYEOF
-            echo "--- pom.xml dependencies after injection ---"
-            grep -A2 '<artifactId>' pom.xml | grep -E '(junit|mockito|spring-boot-starter-test|testng)' || echo "(no test deps found in pom.xml)"
+            echo "--- pom.xml header after injection ---"
+            head -3 pom.xml
+            echo "--- pom.xml test dependencies ---"
+            grep -B1 -A3 '<scope>test</scope>' pom.xml || echo "(no test-scoped deps)"
             echo "---"
-            mvn -q dependency:resolve -DincludeScope=test 2>&1 | tail -5 || true
-            mvn -q test
+            mvn dependency:resolve -DincludeScope=test 2>&1 | tail -20 || true
+            mvn test
             # Collect JaCoCo coverage reports
             for JACOCO_PATH in target/site/jacoco/jacoco.xml target/jacoco.xml; do
               if [ -f "$JACOCO_PATH" ]; then
