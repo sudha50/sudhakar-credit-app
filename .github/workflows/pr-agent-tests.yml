@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "9"
+  PR_AGENT_TEMPLATE_VERSION: "10"
 
 jobs:
   run-tests:
@@ -114,6 +114,10 @@ jobs:
               python3 <<'JACOCO_PYEOF' || true
           import xml.etree.ElementTree as ET, sys
           try:
+              # Register the default Maven namespace so ET.write() does not
+              # prefix elements with ns0: (which corrupts the POM for Maven).
+              MAVEN_NS = 'http://maven.apache.org/POM/4.0.0'
+              ET.register_namespace('', MAVEN_NS)
               tree = ET.parse('pom.xml')
               root = tree.getroot()
               ns = root.tag.split('}')[0] + '}' if '{' in root.tag else ''
