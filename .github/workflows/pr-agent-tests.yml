@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "11"
+  PR_AGENT_TEMPLATE_VERSION: "12"
 
 jobs:
   run-tests:
@@ -146,7 +146,7 @@ jobs:
             fi
             # Inject test dependencies based on detected stack (version-aware)
             python3 <<'TESTDEPS_PYEOF' || true
-          import xml.etree.ElementTree as ET, json, sys
+          import xml.etree.ElementTree as ET, json, sys, re
           try:
               MAVEN_NS = 'http://maven.apache.org/POM/4.0.0'
               ET.register_namespace('', MAVEN_NS)
@@ -166,14 +166,40 @@ jobs:
               except (ValueError, IndexError):
                   java_major = 17
 
-              # Detect if Spring Boot is used (parent or dependency)
+              # Read raw pom.xml for Spring Boot detection
               pom_text = ''
               try:
                   with open('pom.xml') as f:
                       pom_text = f.read()
               except Exception:
                   pass
-              has_spring_boot = 'spring-boot' in pom_text.lower() or bool(stack.get('spring_boot_version'))
+
+              # Detect Spring Boot version from multiple sources:
+              # 1. Parent POM groupId=org.springframework.boot
+              # 2. <spring-boot.version> property
+              # 3. detected_stack from agent
+              sb_version = stack.get('spring_boot_version') or ''
+              if not sb_version:
+                  m = re.search(
+                      '<parent>.*?<groupId>\s*org\.springframework\.boot\s*</groupId>'
+                      '.*?<version>\s*([\d.]+)\s*</version>.*?</parent>',
+                      pom_text, re.DOTALL)
+                  if m:
+                      sb_version = m.group(1)
+              if not sb_version:
+                  m = re.search('<spring-boot\.version>\s*([\d.]+)\s*</spring-boot\.version>', pom_text)
+                  if m:
+                      sb_version = m.group(1)
+
+              has_spring_boot = bool(sb_version) or 'spring-boot' in pom_text.lower()
+              # Fallback SB version if detected but version unknown
+              if has_spring_boot and not sb_version:
+                  sb_version = '3.2.1'
+
+              # Check if parent POM manages dependency versions (BOM)
+              has_sb_parent = bool(re.search(
+                  '<parent>.*?<groupId>\s*org\.springframework\.boot\s*</groupId>.*?</parent>',
+                  pom_text, re.DOTALL))
 
               # Build version-compatible dependency list
               # Mockito 5+ requires Java 11+; fall back to Mockito 4 for Java 8
@@ -192,9 +218,10 @@ jobs:
                   needed.append(('org.mockito', 'mockito-core', mockito_ver))
                   needed.append(('org.mockito', 'mockito-junit-jupiter', mockito_ver))
 
-              # Only inject spring-boot-starter-test if Spring Boot is detected
+              # Spring Boot test deps — always use explicit version unless parent BOM manages it
               if has_spring_boot:
-                  needed.append(('org.springframework.boot', 'spring-boot-starter-test', None))
+                  sbt_ver = None if has_sb_parent else sb_version
+                  needed.append(('org.springframework.boot', 'spring-boot-starter-test', sbt_ver))
 
               tree = ET.parse('pom.xml')
               root = tree.getroot()
@@ -224,7 +251,7 @@ jobs:
 
               if added:
                   tree.write('pom.xml', xml_declaration=True, encoding='UTF-8')
-                  print(f'Test deps injected (java={java_major}, fw={test_fw or "junit5"}): {", ".join(added)}')
+                  print(f'Test deps injected (java={java_major}, fw={test_fw or "junit5"}, sb={sb_version or "none"}): {", ".join(added)}')
               else:
                   print('All test deps already present')
           except Exception as e:
