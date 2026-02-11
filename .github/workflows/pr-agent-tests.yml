@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "8"
+  PR_AGENT_TEMPLATE_VERSION: "9"
 
 jobs:
   run-tests:
@@ -50,7 +50,7 @@ jobs:
           if [ -f pom.xml ]; then
             # Try maven.compiler.release, maven.compiler.source, java.version
             for TAG in maven.compiler.release maven.compiler.source java.version; do
-              VAL=$(grep -oP "<${TAG}>\K[^<]+" pom.xml 2>/dev/null | head -1)
+              VAL=$(sed -n "s/.*<${TAG}>\([^<]*\)<.*/\1/p" pom.xml 2>/dev/null | head -1)
               if [ -n "$VAL" ]; then
                 JAVA_VER="$VAL"
                 break
