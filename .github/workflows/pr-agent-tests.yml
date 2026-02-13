@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "25"
+  PR_AGENT_TEMPLATE_VERSION: "26"
 
 jobs:
   run-tests:
@@ -38,8 +38,10 @@ jobs:
         id: stack
         shell: bash
         run: |
-          echo "detected_stack=${{ inputs.detected_stack }}" >> $GITHUB_OUTPUT
-          echo "lang=$(python3 -c \"import json,sys; print(json.loads(sys.argv[1]).get('language',''))\" '${{ inputs.detected_stack }}')" >> $GITHUB_OUTPUT
+          echo "detected_stack=${DETECTED_STACK}" >> $GITHUB_OUTPUT
+          echo "lang=$(python3 -c "import json,os; print(json.loads(os.environ['DETECTED_STACK']).get('language',''))")" >> $GITHUB_OUTPUT
+        env:
+          DETECTED_STACK: "${{ inputs.detected_stack }}"
 
       - name: Detect Java version from pom.xml
         if: ${{ steps.stack.outputs.lang == 'java' }}
@@ -99,9 +101,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          STACK='${{ inputs.detected_stack }}'
-          echo "$STACK" > detected_stack.json
+          echo "${DETECTED_STACK}" > detected_stack.json
           mkdir -p pr-agent-artifacts
+        env:
+          DETECTED_STACK: "${{ inputs.detected_stack }}"
 
       - name: Inject Java test dependencies
         if: ${{ steps.stack.outputs.lang == 'java' }}
