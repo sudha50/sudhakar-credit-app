@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "18"
+  PR_AGENT_TEMPLATE_VERSION: "19"
 
 jobs:
   run-tests:
@@ -215,6 +215,11 @@ jobs:
                   # spring-boot-test-autoconfigure contains @DataJpaTest, @WebMvcTest etc.
                   # It is a transitive of starter-test but may not resolve when version is managed
                   needed.append(('org.springframework.boot', 'spring-boot-test-autoconfigure', sb_version))
+                  # H2 in-memory database for @DataJpaTest repository tests
+                  needed.append(('com.h2database', 'h2', ''))
+                  # Ensure spring-data-jpa is available for @DataJpaTest autoconfig
+                  if 'spring-boot-starter-data-jpa' in pom:
+                      needed.append(('org.springframework.boot', 'spring-boot-starter-data-jpa', sb_version))
 
               # String-based injection: insert before </dependencies>
               # This preserves the original pom.xml structure (comments, formatting, etc.)
@@ -257,20 +262,32 @@ jobs:
             echo "--- pom.xml test dependencies ---"
             grep -B1 -A3 '<scope>test</scope>' pom.xml || echo "(no test-scoped deps)"
             echo "---"
+            # Create application-test.properties for H2 in-memory DB (used by @DataJpaTest / @SpringBootTest)
+            TEST_PROPS_DIR="src/test/resources"
+            mkdir -p "$TEST_PROPS_DIR"
+            if [ ! -f "$TEST_PROPS_DIR/application-test.properties" ]; then
+              cat > "$TEST_PROPS_DIR/application-test.properties" <<'H2PROPS'
+          spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+          spring.datasource.driver-class-name=org.h2.Driver
+          spring.datasource.username=sa
+          spring.datasource.password=
+          spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+          spring.jpa.hibernate.ddl-auto=create-drop
+          spring.flyway.enabled=false
+          H2PROPS
+              echo "Created application-test.properties with H2 datasource"
+            fi
             # Fix missing imports and replace fragile annotations in generated test files
             python3 <<'IMPORTFIX_PYEOF' || true
           import os, sys
           NL = chr(10)
 
           # --- Phase 1: Replace fragile annotations with robust alternatives ---
-          # @DataJpaTest requires spring-boot-test-autoconfigure + JPA autoconfig on classpath.
-          # @SpringBootTest loads full context (incl. JPA) and only needs spring-boot-starter-test.
+          # @WebMvcTest without a controller class arg often fails to load context.
+          # @DataJpaTest is kept — it works with H2 in-memory DB (injected below).
           REPLACEMENTS = [
               # (old_annotation, old_import_fragment, new_annotation, new_import)
-              ('@DataJpaTest', 'autoconfigure.data.jpa.DataJpaTest',
-               '@SpringBootTest', 'import org.springframework.boot.test.context.SpringBootTest;'),
-              ('@WebMvcTest',  'autoconfigure.web.servlet.WebMvcTest',
-               '@SpringBootTest', 'import org.springframework.boot.test.context.SpringBootTest;'),
+              # Only replace @WebMvcTest (without class arg) as fallback
           ]
 
           # Map annotation/class usage markers to their required import statements
@@ -280,8 +297,10 @@ jobs:
               ('@Mock',             'import org.mockito.Mock;'),
               ('@InjectMocks',      'import org.mockito.InjectMocks;'),
               ('Mockito.',          'import org.mockito.Mockito;'),
-              ('@MockBean',         'import org.springframework.boot.test.mock.bean.MockBean;'),
+              ('@MockBean',         'import org.springframework.boot.test.mock.mockito.MockBean;'),
               ('@SpringBootTest',   'import org.springframework.boot.test.context.SpringBootTest;'),
+              ('@DataJpaTest',      'import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;'),
+              ('@ActiveProfiles',   'import org.springframework.test.context.ActiveProfiles;'),
               ('@AutoConfigureMockMvc', 'import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;'),
               ('MockMvc ',          'import org.springframework.test.web.servlet.MockMvc;'),
               ('@Autowired',        'import org.springframework.beans.factory.annotation.Autowired;'),
@@ -380,6 +399,33 @@ jobs:
                       changed = True
                       print('Fixed imports in ' + fname + ': ' + ', '.join(m.split('.')[-1].rstrip(';') for m in missing))
 
+                  # Phase 3: Inject @ActiveProfiles("test") for Spring context tests
+                  # This makes @DataJpaTest and @SpringBootTest use application-test.properties (H2)
+                  needs_profile = ('@DataJpaTest' in content or '@SpringBootTest' in content)
+                  has_profile = '@ActiveProfiles' in content
+                  if needs_profile and not has_profile:
+                      # Add annotation before the class declaration
+                      lines3 = content.split(NL)
+                      for ci, cl in enumerate(lines3):
+                          stripped = cl.strip()
+                          if stripped.startswith('public class ') or stripped.startswith('class '):
+                              lines3.insert(ci, '@ActiveProfiles("test")')
+                              break
+                      content = NL.join(lines3)
+                      # Add import if missing
+                      ap_import = 'import org.springframework.test.context.ActiveProfiles;'
+                      if ap_import not in content:
+                          lines4 = content.split(NL)
+                          pi = 0
+                          for pi2, pl in enumerate(lines4):
+                              if pl.startswith('package '):
+                                  pi = pi2 + 1
+                                  break
+                          lines4.insert(pi + 1, ap_import)
+                          content = NL.join(lines4)
+                      changed = True
+                      print('Added @ActiveProfiles("test") to ' + fname)
+
                   if changed:
                       with open(fpath, 'w') as f:
                           f.write(content)
@@ -391,29 +437,47 @@ jobs:
           IMPORTFIX_PYEOF
             mvn dependency:resolve -DincludeScope=test 2>&1 | tail -20 || true
             # --- Compile-check-and-prune: remove test files that fail compilation ---
-            # This handles LLM hallucinations (wrong constructors, wrong methods, type mismatches)
-            # by deleting uncompilable test files so the remaining tests can still run.
-            for ATTEMPT in 1 2 3; do
-              echo "=== Compile check attempt $ATTEMPT ==="
-              COMPILE_OUT=$(mvn test-compile 2>&1) && break
-              # Parse failing file paths from compiler errors
-              FAILING=$(echo "$COMPILE_OUT" | grep -oP '(?<=\[ERROR\] )/.+\.java' | sort -u)
-              if [ -z "$FAILING" ]; then
-                # Try alternate error format
-                FAILING=$(echo "$COMPILE_OUT" | grep -oP '/[^ ]+\.java(?=:\[)' | sort -u)
-              fi
-              if [ -z "$FAILING" ]; then
-                echo "Compile failed but could not parse failing files"
-                echo "$COMPILE_OUT" | tail -30
-                break
-              fi
-              for F in $FAILING; do
-                if [ -f "$F" ]; then
-                  echo "Removing uncompilable test: $F"
-                  rm -f "$F"
-                fi
-              done
-            done
+            # Uses Python to reliably parse javac error output and delete uncompilable test files.
+            python3 <<'PRUNE_PYEOF' || true
+          import subprocess, re, os, sys
+          NL = chr(10)
+          MAX_ATTEMPTS = 3
+          test_dir = 'src/test/java'
+          if not os.path.isdir(test_dir):
+              print('No test directory, skipping compile check')
+              sys.exit(0)
+          for attempt in range(1, MAX_ATTEMPTS + 1):
+              print('=== Compile check attempt ' + str(attempt) + ' ===')
+              result = subprocess.run(
+                  ['mvn', 'test-compile', '-q'],
+                  capture_output=True, text=True, timeout=120
+              )
+              if result.returncode == 0:
+                  print('Compilation succeeded')
+                  break
+              output = result.stdout + NL + result.stderr
+              paths = set()
+              for line in output.split(NL):
+                  m = re.search(r'(/\S+\.java):\[', line)
+                  if m:
+                      paths.add(m.group(1))
+              test_files = sorted(p for p in paths if '/src/test/' in p and os.path.isfile(p))
+              if not test_files:
+                  print('Compile failed but could not identify failing test files')
+                  for ln in output.strip().split(NL)[-30:]:
+                      print(ln)
+                  break
+              for f in test_files:
+                  print('Removing uncompilable test: ' + f)
+                  os.remove(f)
+              remaining = 0
+              for root, dirs, files in os.walk(test_dir):
+                  remaining += sum(1 for fn in files if fn.endswith('.java'))
+              if remaining == 0:
+                  print('All test files removed - no compilable tests')
+                  break
+              print(str(remaining) + ' test file(s) remaining, retrying...')
+          PRUNE_PYEOF
             # Run tests (only compilable files remain)
             mvn test
             # Collect JaCoCo coverage reports
