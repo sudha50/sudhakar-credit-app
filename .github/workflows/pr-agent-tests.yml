@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "19"
+  PR_AGENT_TEMPLATE_VERSION: "20"
 
 jobs:
   run-tests:
@@ -220,6 +220,9 @@ jobs:
                   # Ensure spring-data-jpa is available for @DataJpaTest autoconfig
                   if 'spring-boot-starter-data-jpa' in pom:
                       needed.append(('org.springframework.boot', 'spring-boot-starter-data-jpa', sb_version))
+                  # spring-data-jdbc is needed by DataJdbcTypeExcludeFilter (loaded by @DataJpaTest)
+                  # Without it: NoClassDefFoundError: AbstractJdbcConfiguration
+                  needed.append(('org.springframework.data', 'spring-data-jdbc', ''))
 
               # String-based injection: insert before </dependencies>
               # This preserves the original pom.xml structure (comments, formatting, etc.)
@@ -312,6 +315,9 @@ jobs:
               ('ArgumentCaptor',    'import org.mockito.ArgumentCaptor;'),
               ('@Captor',           'import org.mockito.Captor;'),
               ('@Transactional',    'import org.springframework.transaction.annotation.Transactional;'),
+              ('TestEntityManager', 'import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;'),
+              ('@WebMvcTest',       'import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;'),
+              ('ObjectMapper',      'import com.fasterxml.jackson.databind.ObjectMapper;'),
               # Common JDK types the LLM often forgets to import
               ('List<',             'import java.util.List;'),
               ('ArrayList<',        'import java.util.ArrayList;'),
@@ -425,6 +431,35 @@ jobs:
                           content = NL.join(lines4)
                       changed = True
                       print('Added @ActiveProfiles("test") to ' + fname)
+
+                  # Phase 4: Fix 'new ServiceImpl()' pattern in tests that have @Mock fields
+                  # When a test has @Mock fields but instantiates the service with 'new',
+                  # the mocks are never injected → NullPointerException on every call.
+                  # Fix: replace 'new XxxServiceImpl(...)' with @InjectMocks field.
+                  if '@Mock' in content and 'new ' in content and '@InjectMocks' not in content:
+                      import re as _re
+                      # Match: SomeServiceImpl svc = new SomeServiceImpl(...)
+                      # or: SomeService svc = new SomeServiceImpl(...)
+                      pat = _re.compile(
+                          r'(\s+)((?:private|protected|public)\s+)?'
+                          r'(\w+(?:Service|Facade|Manager|Handler|Processor)\w*)\s+'
+                          r'(\w+)\s*=\s*new\s+\w+\([^)]*\)\s*;'
+                      )
+                      m = pat.search(content)
+                      if m:
+                          indent = m.group(1)
+                          svc_type = m.group(3)
+                          svc_name = m.group(4)
+                          old_line = m.group(0)
+                          new_line = indent + '@InjectMocks' + NL + indent + 'private ' + svc_type + ' ' + svc_name + ';'
+                          content = content.replace(old_line, new_line)
+                          # Remove setUp() that does 'svc = new ...'
+                          setup_pat = _re.compile(
+                              r'\s+@BeforeEach\s+void\s+setUp\(\)\s*\{[^}]*' + _re.escape(svc_name) + r'\s*=\s*new\s+\w+\([^)]*\)\s*;[^}]*\}'
+                          )
+                          content = setup_pat.sub('', content)
+                          changed = True
+                          print('Fixed new ServiceImpl() -> @InjectMocks in ' + fname)
 
                   if changed:
                       with open(fpath, 'w') as f:
