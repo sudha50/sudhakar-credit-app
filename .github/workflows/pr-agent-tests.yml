@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "21"
+  PR_AGENT_TEMPLATE_VERSION: "22"
 
 jobs:
   run-tests:
@@ -95,23 +95,22 @@ jobs:
           role-to-assume: ${{ secrets.PR_AGENT_AWS_ROLE_ARN }}
           aws-region: us-east-1
 
-      - name: Run tests
-        id: tests
+      - name: Prepare test environment
         shell: bash
         run: |
           set -euo pipefail
           STACK='${{ inputs.detected_stack }}'
           echo "$STACK" > detected_stack.json
-
-          LANG=$(python -c "import json; print(json.load(open('detected_stack.json')).get('language',''))")
-          FW=$(python -c "import json; print(json.load(open('detected_stack.json')).get('framework',''))")
-
           mkdir -p pr-agent-artifacts
 
-          if [ "$LANG" = "java" ]; then
-            # Inject JaCoCo plugin via string insertion (preserves pom.xml structure)
-            if ! grep -q 'jacoco-maven-plugin' pom.xml 2>/dev/null; then
-              python3 <<'JACOCO_PYEOF' || true
+      - name: Inject Java test dependencies
+        if: ${{ steps.stack.outputs.lang == 'java' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Inject JaCoCo plugin via string insertion (preserves pom.xml structure)
+          if ! grep -q 'jacoco-maven-plugin' pom.xml 2>/dev/null; then
+            python3 <<'JACOCO_PYEOF' || true
           import sys
           try:
               with open('pom.xml', 'r') as f:
@@ -280,8 +279,15 @@ jobs:
           H2PROPS
               echo "Created application-test.properties with H2 datasource"
             fi
-            # Fix missing imports and replace fragile annotations in generated test files
-            python3 <<'IMPORTFIX_PYEOF' || true
+          mvn dependency:resolve -DincludeScope=test 2>&1 | tail -20 || true
+
+      - name: Fix Java test imports
+        if: ${{ steps.stack.outputs.lang == 'java' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fix missing imports and replace fragile annotations in generated test files
+          python3 <<'IMPORTFIX_PYEOF' || true
           import os, sys
           NL = chr(10)
 
@@ -533,7 +539,15 @@ jobs:
           else:
               print('All test files OK')
           IMPORTFIX_PYEOF
-            mvn dependency:resolve -DincludeScope=test 2>&1 | tail -20 || true
+
+      - name: Run tests
+        id: tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          LANG=$(python3 -c "import json; print(json.load(open('detected_stack.json')).get('language',''))")
+
+          if [ "$LANG" = "java" ]; then
             # --- Compile-check-and-prune: remove test files that fail compilation ---
             # Uses Python to reliably parse javac error output and delete uncompilable test files.
             python3 <<'PRUNE_PYEOF' || true
