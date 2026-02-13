@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "17"
+  PR_AGENT_TEMPLATE_VERSION: "18"
 
 jobs:
   run-tests:
@@ -292,7 +292,25 @@ jobs:
               ('Assertions.',       'import org.junit.jupiter.api.Assertions;'),
               ('ArgumentCaptor',    'import org.mockito.ArgumentCaptor;'),
               ('@Captor',           'import org.mockito.Captor;'),
+              ('@Transactional',    'import org.springframework.transaction.annotation.Transactional;'),
+              # Common JDK types the LLM often forgets to import
+              ('List<',             'import java.util.List;'),
+              ('ArrayList<',        'import java.util.ArrayList;'),
+              ('Map<',              'import java.util.Map;'),
+              ('Optional<',         'import java.util.Optional;'),
+              ('Arrays.',           'import java.util.Arrays;'),
+              ('Collections.',      'import java.util.Collections;'),
+              ('LocalDateTime',     'import java.time.LocalDateTime;'),
+              ('LocalDate.',        'import java.time.LocalDate;'),
           ]
+
+          # Phase 1b: Fix wrong assertion imports
+          # LLM sometimes imports Spring's AssertionErrors instead of JUnit 5 Assertions
+          WRONG_ASSERT_IMPORTS = [
+              'import org.springframework.test.util.AssertionErrors',
+              'import static org.springframework.test.util.AssertionErrors',
+          ]
+          CORRECT_ASSERT_IMPORT = 'import static org.junit.jupiter.api.Assertions.*;'
 
           fixed = 0
           test_dir = 'src/test/java'
@@ -308,7 +326,7 @@ jobs:
                       content = f.read()
                   changed = False
 
-                  # Phase 1: Replace fragile annotations
+                  # Phase 1a: Replace fragile annotations
                   for old_ann, old_imp_frag, new_ann, new_imp in REPLACEMENTS:
                       if old_ann in content:
                           content = content.replace(old_ann, new_ann)
@@ -321,6 +339,28 @@ jobs:
                           content = NL.join(new_lines)
                           changed = True
                           print('Replaced ' + old_ann + ' -> ' + new_ann + ' in ' + fname)
+
+                  # Phase 1b: Fix wrong assertion imports
+                  for wrong in WRONG_ASSERT_IMPORTS:
+                      if wrong in content:
+                          new_lines = []
+                          for line in content.split(NL):
+                              if wrong in line and line.strip().startswith('import '):
+                                  continue
+                              new_lines.append(line)
+                          content = NL.join(new_lines)
+                          # Add correct static import if not present
+                          if CORRECT_ASSERT_IMPORT not in content:
+                              lines2 = content.split(NL)
+                              idx2 = 0
+                              for ii, ll in enumerate(lines2):
+                                  if ll.startswith('package '):
+                                      idx2 = ii + 1
+                                      break
+                              lines2.insert(idx2 + 1, CORRECT_ASSERT_IMPORT)
+                              content = NL.join(lines2)
+                          changed = True
+                          print('Fixed assertion import in ' + fname)
 
                   # Phase 2: Add missing imports
                   missing = []
@@ -350,6 +390,31 @@ jobs:
               print('All test files OK')
           IMPORTFIX_PYEOF
             mvn dependency:resolve -DincludeScope=test 2>&1 | tail -20 || true
+            # --- Compile-check-and-prune: remove test files that fail compilation ---
+            # This handles LLM hallucinations (wrong constructors, wrong methods, type mismatches)
+            # by deleting uncompilable test files so the remaining tests can still run.
+            for ATTEMPT in 1 2 3; do
+              echo "=== Compile check attempt $ATTEMPT ==="
+              COMPILE_OUT=$(mvn test-compile 2>&1) && break
+              # Parse failing file paths from compiler errors
+              FAILING=$(echo "$COMPILE_OUT" | grep -oP '(?<=\[ERROR\] )/.+\.java' | sort -u)
+              if [ -z "$FAILING" ]; then
+                # Try alternate error format
+                FAILING=$(echo "$COMPILE_OUT" | grep -oP '/[^ ]+\.java(?=:\[)' | sort -u)
+              fi
+              if [ -z "$FAILING" ]; then
+                echo "Compile failed but could not parse failing files"
+                echo "$COMPILE_OUT" | tail -30
+                break
+              fi
+              for F in $FAILING; do
+                if [ -f "$F" ]; then
+                  echo "Removing uncompilable test: $F"
+                  rm -f "$F"
+                fi
+              done
+            done
+            # Run tests (only compilable files remain)
             mvn test
             # Collect JaCoCo coverage reports
             for JACOCO_PATH in target/site/jacoco/jacoco.xml target/jacoco.xml; do
