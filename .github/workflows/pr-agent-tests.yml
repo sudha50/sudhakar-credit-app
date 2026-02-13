@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "16"
+  PR_AGENT_TEMPLATE_VERSION: "17"
 
 jobs:
   run-tests:
@@ -257,9 +257,22 @@ jobs:
             echo "--- pom.xml test dependencies ---"
             grep -B1 -A3 '<scope>test</scope>' pom.xml || echo "(no test-scoped deps)"
             echo "---"
-            # Fix missing imports in generated test files
+            # Fix missing imports and replace fragile annotations in generated test files
             python3 <<'IMPORTFIX_PYEOF' || true
           import os, sys
+          NL = chr(10)
+
+          # --- Phase 1: Replace fragile annotations with robust alternatives ---
+          # @DataJpaTest requires spring-boot-test-autoconfigure + JPA autoconfig on classpath.
+          # @SpringBootTest loads full context (incl. JPA) and only needs spring-boot-starter-test.
+          REPLACEMENTS = [
+              # (old_annotation, old_import_fragment, new_annotation, new_import)
+              ('@DataJpaTest', 'autoconfigure.data.jpa.DataJpaTest',
+               '@SpringBootTest', 'import org.springframework.boot.test.context.SpringBootTest;'),
+              ('@WebMvcTest',  'autoconfigure.web.servlet.WebMvcTest',
+               '@SpringBootTest', 'import org.springframework.boot.test.context.SpringBootTest;'),
+          ]
+
           # Map annotation/class usage markers to their required import statements
           KNOWN = [
               ('@ExtendWith',       'import org.junit.jupiter.api.extension.ExtendWith;'),
@@ -268,8 +281,6 @@ jobs:
               ('@InjectMocks',      'import org.mockito.InjectMocks;'),
               ('Mockito.',          'import org.mockito.Mockito;'),
               ('@MockBean',         'import org.springframework.boot.test.mock.bean.MockBean;'),
-              ('@DataJpaTest',      'import org.springframework.boot.test.autoconfigure.data.jpa.DataJpaTest;'),
-              ('@WebMvcTest',       'import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;'),
               ('@SpringBootTest',   'import org.springframework.boot.test.context.SpringBootTest;'),
               ('@AutoConfigureMockMvc', 'import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;'),
               ('MockMvc ',          'import org.springframework.test.web.servlet.MockMvc;'),
@@ -281,9 +292,8 @@ jobs:
               ('Assertions.',       'import org.junit.jupiter.api.Assertions;'),
               ('ArgumentCaptor',    'import org.mockito.ArgumentCaptor;'),
               ('@Captor',           'import org.mockito.Captor;'),
-              ('TestEntityManager', 'import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;'),
           ]
-          NL = chr(10)
+
           fixed = 0
           test_dir = 'src/test/java'
           if not os.path.isdir(test_dir):
@@ -296,6 +306,23 @@ jobs:
                   fpath = os.path.join(root, fname)
                   with open(fpath, 'r') as f:
                       content = f.read()
+                  changed = False
+
+                  # Phase 1: Replace fragile annotations
+                  for old_ann, old_imp_frag, new_ann, new_imp in REPLACEMENTS:
+                      if old_ann in content:
+                          content = content.replace(old_ann, new_ann)
+                          # Remove old import line if present
+                          new_lines = []
+                          for line in content.split(NL):
+                              if old_imp_frag in line and line.strip().startswith('import '):
+                                  continue
+                              new_lines.append(line)
+                          content = NL.join(new_lines)
+                          changed = True
+                          print('Replaced ' + old_ann + ' -> ' + new_ann + ' in ' + fname)
+
+                  # Phase 2: Add missing imports
                   missing = []
                   for marker, imp_line in KNOWN:
                       if marker in content and imp_line not in content:
@@ -309,14 +336,18 @@ jobs:
                               break
                       for imp in sorted(missing):
                           lines.insert(insert_idx + 1, imp)
-                      with open(fpath, 'w') as f:
-                          f.write(NL.join(lines))
+                      content = NL.join(lines)
+                      changed = True
                       print('Fixed imports in ' + fname + ': ' + ', '.join(m.split('.')[-1].rstrip(';') for m in missing))
+
+                  if changed:
+                      with open(fpath, 'w') as f:
+                          f.write(content)
                       fixed += 1
           if fixed:
-              print('Fixed imports in ' + str(fixed) + ' test file(s)')
+              print('Patched ' + str(fixed) + ' test file(s)')
           else:
-              print('All test imports OK')
+              print('All test files OK')
           IMPORTFIX_PYEOF
             mvn dependency:resolve -DincludeScope=test 2>&1 | tail -20 || true
             mvn test
