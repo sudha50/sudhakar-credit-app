@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "23"
+  PR_AGENT_TEMPLATE_VERSION: "24"
 
 jobs:
   run-tests:
@@ -562,6 +562,18 @@ jobs:
                               content = NL.join(_ls8b)
                           changed = True
                           print('Phase8: @ExtendWith(MockitoExtension.class) in ' + fname)
+
+                  # Phase 9: setUp() new overwrites @InjectMocks → remove it
+                  if '@InjectMocks' in content and '@Mock' in content:
+                      import re as _r9
+                      _m9 = _r9.search(r'@InjectMocks\s+(?:private\s+)?\w+\s+(\w+)\s*;', content)
+                      if _m9:
+                          _v = _m9.group(1)
+                          _p = r'[ 	]*' + _r9.escape(_v) + r'\s*=\s*new\s+\w+\([^)]*\)\s*;\s*' + NL + '?'
+                          if _r9.search(_p, content):
+                              content = _r9.sub(_p, '', content)
+                              changed = True
+                              print('Phase9: rm new ' + _v + ' in ' + fname)
 
                   # Phase 5: Fix @WebMvcTest tests that use @Mock instead of @MockBean
                   # @WebMvcTest loads a Spring context — service deps must be @MockBean, not @Mock.
