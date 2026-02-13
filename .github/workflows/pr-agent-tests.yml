@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "15"
+  PR_AGENT_TEMPLATE_VERSION: "16"
 
 jobs:
   run-tests:
@@ -209,9 +209,12 @@ jobs:
                   needed.append(('org.mockito', 'mockito-core', mockito_ver))
                   needed.append(('org.mockito', 'mockito-junit-jupiter', mockito_ver))
               if has_spring_boot:
-                  sbt_ver = None if has_sb_parent else sb_version
-                  needed.append(('org.springframework.boot', 'spring-boot-starter-test', sbt_ver))
-                  needed.append(('org.springframework.boot', 'spring-boot-starter-data-jpa', sbt_ver))
+                  # Always use explicit version — managed (no version) can fail to
+                  # resolve transitives like spring-boot-test-autoconfigure
+                  needed.append(('org.springframework.boot', 'spring-boot-starter-test', sb_version))
+                  # spring-boot-test-autoconfigure contains @DataJpaTest, @WebMvcTest etc.
+                  # It is a transitive of starter-test but may not resolve when version is managed
+                  needed.append(('org.springframework.boot', 'spring-boot-test-autoconfigure', sb_version))
 
               # String-based injection: insert before </dependencies>
               # This preserves the original pom.xml structure (comments, formatting, etc.)
