@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "24"
+  PR_AGENT_TEMPLATE_VERSION: "25"
 
 jobs:
   run-tests:
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           echo "detected_stack=${{ inputs.detected_stack }}" >> $GITHUB_OUTPUT
-          echo "lang=$(python3 -c "import json,sys; print(json.loads(sys.argv[1]).get('language',''))" '${{ inputs.detected_stack }}')" >> $GITHUB_OUTPUT
+          echo "lang=$(python3 -c \"import json,sys; print(json.loads(sys.argv[1]).get('language',''))\" '${{ inputs.detected_stack }}')" >> $GITHUB_OUTPUT
 
       - name: Detect Java version from pom.xml
         if: ${{ steps.stack.outputs.lang == 'java' }}
@@ -50,7 +50,7 @@ jobs:
           if [ -f pom.xml ]; then
             # Try maven.compiler.release, maven.compiler.source, java.version
             for TAG in maven.compiler.release maven.compiler.source java.version; do
-              VAL=$(sed -n "s/.*<${TAG}>\([^<]*\)<.*/\1/p" pom.xml 2>/dev/null | head -1)
+              VAL=$(sed -n "s/.*<${TAG}>\\([^<]*\\)<.*/\\1/p" pom.xml 2>/dev/null | head -1)
               if [ -n "$VAL" ]; then
                 JAVA_VER="$VAL"
                 break
@@ -482,7 +482,7 @@ jobs:
                               content = content.replace(old_decl, new_decl, 1)
                           # Remove the 'var = new Impl(...)' line from setUp()
                           content = _re.sub(
-                              r'[ 	]*' + _re.escape(var_name) + r'\s*=\s*new\s+\w+\([^)]*\)\s*;\s*' + NL + '?',
+                              r'[ \t]*' + _re.escape(var_name) + r'\s*=\s*new\s+\w+\([^)]*\)\s*;\s*' + NL + '?',
                               '', content, count=1
                           )
                           # If setUp() is now empty, remove it
@@ -563,15 +563,15 @@ jobs:
                           changed = True
                           print('Phase8: @ExtendWith(MockitoExtension.class) in ' + fname)
 
-                  # Phase 9: setUp() new overwrites @InjectMocks → remove it
+                  # Phase 9: field-init or setUp new overwrites @InjectMocks
                   if '@InjectMocks' in content and '@Mock' in content:
                       import re as _r9
-                      _m9 = _r9.search(r'@InjectMocks\s+(?:private\s+)?\w+\s+(\w+)\s*;', content)
+                      _m9 = _r9.search(r'@InjectMocks\s+(?:private\s+)?\w+\s+(\w+)', content)
                       if _m9:
                           _v = _m9.group(1)
-                          _p = r'[ 	]*' + _r9.escape(_v) + r'\s*=\s*new\s+\w+\([^)]*\)\s*;\s*' + NL + '?'
-                          if _r9.search(_p, content):
-                              content = _r9.sub(_p, '', content)
+                          _fp = _r9.compile(r'(\b' + _r9.escape(_v) + r')\s*=\s*new\s+\w+\([^)]*\)')
+                          if _fp.search(content):
+                              content = _fp.sub(r'\1', content)
                               changed = True
                               print('Phase9: rm new ' + _v + ' in ' + fname)
 
@@ -597,10 +597,10 @@ jobs:
                   if '@DataJpaTest' in content and '@Mock' in content:
                       import re as _re6
                       # Replace @Mock with @Autowired on repository fields
-                      content = _re6.sub(r'@Mock\s+((?:private\s+)?(\w+Repository)\s+)', r'@Autowired ' + NL + '    \1', content)
+                      content = _re6.sub(r'@Mock\s+((?:private\s+)?(\w+Repository)\s+)', r'@Autowired ' + NL + '    \\1', content)
                       # Remove when(...).thenReturn(...) lines (they stub the real repo)
-                      content = _re6.sub(r'[ 	]*when\s*\([^;]*\)\s*\.thenReturn\s*\([^;]*\)\s*;[ 	]*' + NL + '?', '', content)
-                      content = _re6.sub(r'[ 	]*when\s*\([^;]*\)\s*\.thenThrow\s*\([^;]*\)\s*;[ 	]*' + NL + '?', '', content)
+                      content = _re6.sub(r'[ \t]*when\s*\([^;]*\)\s*\.thenReturn\s*\([^;]*\)\s*;[ \t]*' + NL + '?', '', content)
+                      content = _re6.sub(r'[ \t]*when\s*\([^;]*\)\s*\.thenThrow\s*\([^;]*\)\s*;[ \t]*' + NL + '?', '', content)
                       # Remove @ExtendWith(MockitoExtension.class) — not needed with @DataJpaTest
                       content = _re6.sub(r'@ExtendWith\s*\(\s*MockitoExtension\.class\s*\)\s*' + NL + '?', '', content)
                       # Remove unused Mockito imports
@@ -777,7 +777,7 @@ jobs:
               "coverage": cov,
           })
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f'body={body}\n')
+              f.write(f'body={body}\\n')
           PYEOF
         env:
           RUN_ID: "${{ inputs.agent_run_id }}"
@@ -800,6 +800,10 @@ jobs:
           body = sys.stdin.read().encode()
           print(hmac.new(secret, body, hashlib.sha256).hexdigest())
           ")
-          curl -sS -X POST             -H "Content-Type: application/json"             -H "X-PR-Agent-Signature: sha256=$SIG"             --data-binary "$BODY"             "https://7jsur28fwi.execute-api.us-east-1.amazonaws.com/workflow-callback"
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-PR-Agent-Signature: sha256=$SIG" \
+            --data-binary "$BODY" \
+            "https://7jsur28fwi.execute-api.us-east-1.amazonaws.com/workflow-callback"
         env:
           CALLBACK_SECRET: "${{ secrets.PR_AGENT_CALLBACK_SECRET }}"
