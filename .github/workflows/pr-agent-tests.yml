@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "22"
+  PR_AGENT_TEMPLATE_VERSION: "23"
 
 jobs:
   run-tests:
@@ -493,6 +493,76 @@ jobs:
                           changed = True
                           print('Fixed setUp() new -> @InjectMocks in ' + fname)
 
+                  # Phase 7: Fallback @InjectMocks for bare service/mapper fields
+                  # If Phase 4 didn't match (no 'new XxxImpl()'), find the
+                  # uninitialised field whose type looks like a test subject.
+                  if '@Mock' in content and '@InjectMocks' not in content:
+                      if '@WebMvcTest' not in content and '@DataJpaTest' not in content:
+                          import re as _re7
+                          _SUT = _re7.compile(r'(private\s+)?(\w+(?:Service|Mapper|Handler|Facade|Manager|Processor|Provider|Controller|Helper|Validator|Converter)(?:Impl)?)\s+(\w+)\s*;')
+                          _lines7 = content.split(NL)
+                          _target7 = None
+                          for _i7 in range(len(_lines7)):
+                              _m7 = _SUT.search(_lines7[_i7].strip())
+                              if not _m7:
+                                  continue
+                              _has_ann = False
+                              for _j7 in range(max(0, _i7-3), _i7):
+                                  if _lines7[_j7].strip().startswith('@'):
+                                      _has_ann = True
+                                      break
+                              if _has_ann:
+                                  continue
+                              _target7 = (_i7, _m7.group(2), _m7.group(3))
+                              break
+                          if _target7:
+                              _ti, _st7, _sn7 = _target7
+                              _ind7 = _lines7[_ti][:len(_lines7[_ti]) - len(_lines7[_ti].lstrip())]
+                              _lines7[_ti] = _ind7 + '@InjectMocks' + NL + _ind7 + 'private ' + _st7 + ' ' + _sn7 + ';'
+                              content = NL.join(_lines7)
+                              _ij = 'import org.mockito.InjectMocks;'
+                              if _ij not in content:
+                                  _ls7 = content.split(NL)
+                                  _pi7 = 0
+                                  for _ix7, _ll7 in enumerate(_ls7):
+                                      if _ll7.startswith('package '):
+                                          _pi7 = _ix7 + 1
+                                          break
+                                  _ls7.insert(_pi7 + 1, _ij)
+                                  content = NL.join(_ls7)
+                              changed = True
+                              print('Phase7: @InjectMocks on ' + _sn7 + ' in ' + fname)
+
+                  # Phase 8: Ensure @ExtendWith(MockitoExtension.class) for @Mock tests
+                  if '@Mock' in content and '@ExtendWith(MockitoExtension.class)' not in content and 'MockitoAnnotations' not in content:
+                      if '@WebMvcTest' not in content and '@DataJpaTest' not in content and '@SpringBootTest' not in content:
+                          _ls8 = content.split(NL)
+                          for _ci8, _cl8 in enumerate(_ls8):
+                              _s8 = _cl8.strip()
+                              if _s8.startswith('public class ') or _s8.startswith('class '):
+                                  _ls8.insert(_ci8, '@ExtendWith(MockitoExtension.class)')
+                                  break
+                          content = NL.join(_ls8)
+                          _ei = 'import org.junit.jupiter.api.extension.ExtendWith;'
+                          _mi = 'import org.mockito.junit.jupiter.MockitoExtension;'
+                          _a8 = []
+                          if _ei not in content:
+                              _a8.append(_ei)
+                          if _mi not in content:
+                              _a8.append(_mi)
+                          if _a8:
+                              _ls8b = content.split(NL)
+                              _pi8 = 0
+                              for _ix8, _ll8 in enumerate(_ls8b):
+                                  if _ll8.startswith('package '):
+                                      _pi8 = _ix8 + 1
+                                      break
+                              for _imp8 in _a8:
+                                  _ls8b.insert(_pi8 + 1, _imp8)
+                              content = NL.join(_ls8b)
+                          changed = True
+                          print('Phase8: @ExtendWith(MockitoExtension.class) in ' + fname)
+
                   # Phase 5: Fix @WebMvcTest tests that use @Mock instead of @MockBean
                   # @WebMvcTest loads a Spring context — service deps must be @MockBean, not @Mock.
                   # Also: if @WebMvcTest has no controller class arg, it tries to load ALL controllers.
@@ -590,8 +660,13 @@ jobs:
                   break
               print(str(remaining) + ' test file(s) remaining, retrying...')
           PRUNE_PYEOF
-            # Run tests (only compilable files remain)
-            mvn test
+            # Run tests — capture exit code so coverage + surefire logs are collected even on failure
+            MVN_RC=0
+            mvn test || MVN_RC=$?
+            # Capture surefire error summary for self-heal callback
+            if [ -d target/surefire-reports ]; then
+              grep -h -A2 'FAILURE\|ERROR' target/surefire-reports/*.txt 2>/dev/null | head -200 > pr-agent-artifacts/surefire-errors.txt || true
+            fi
             # Collect JaCoCo coverage reports
             for JACOCO_PATH in target/site/jacoco/jacoco.xml target/jacoco.xml; do
               if [ -f "$JACOCO_PATH" ]; then
@@ -622,6 +697,8 @@ jobs:
               print(f'Coverage parse skipped: {e}')
           COV_PYEOF
             fi
+            # Propagate mvn test exit code (step fails if tests failed, but coverage is collected)
+            exit $MVN_RC
           elif [ "$LANG" = "node" ]; then
             npm ci
             npm test -- --coverage || npm test || true
