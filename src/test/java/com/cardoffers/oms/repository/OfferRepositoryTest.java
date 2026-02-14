@@ -1,96 +1,141 @@
 package com.cardoffers.oms.repository;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import java.time.LocalDate;
 import java.util.List;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 
 import com.cardoffers.oms.model.entity.Offer;
+import com.cardoffers.oms.model.entity.Merchant;
+import com.cardoffers.oms.model.entity.CardNetwork;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
 
 @DataJpaTest
-@ExtendWith(MockitoExtension.class)
+@ActiveProfiles("test")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 class OfferRepositoryTest {
 
     @Autowired
-    private OfferRepository offerRepository;
+    TestEntityManager entityManager;
 
-    @Mock
-    private OfferRepository mockOfferRepository;
+    @Autowired
+    OfferRepository offerRepository;
 
     @Test
-    void shouldReturnActiveOffers_whenCurrentDateWithinRange() {
+    void shouldReturnActiveOffers_whenCurrentDateIsWithinRange() {
+        // Arrange
         LocalDate currentDate = LocalDate.now();
-        Offer offer = new Offer(); // Add proper initialization here
+        Offer offer = new Offer();
+        offer.setActive(true);
+        offer.setStartDate(currentDate.minusDays(1));
+        offer.setEndDate(currentDate.plusDays(1));
+        entityManager.persist(offer);
+        entityManager.flush();
 
-        when(mockOfferRepository.findActiveOffers(currentDate)).thenReturn(List.of(offer));
-
+        // Act
         List<Offer> activeOffers = offerRepository.findActiveOffers(currentDate);
-        Assertions.assertNotNull(activeOffers);
-        Assertions.assertEquals(1, activeOffers.size());
+
+        // Assert
+        assertNotNull(activeOffers);
+        assertEquals(1, activeOffers.size());
+        assertEquals(offer, activeOffers.get(0));
     }
 
     @Test
-    void shouldReturnEmptyList_whenNoActiveOffers() {
+    void shouldReturnNoActiveOffers_whenNoOffersAreActive() {
+        // Arrange
         LocalDate currentDate = LocalDate.now();
 
-        when(mockOfferRepository.findActiveOffers(currentDate)).thenReturn(List.of());
-
+        // Act
         List<Offer> activeOffers = offerRepository.findActiveOffers(currentDate);
-        Assertions.assertTrue(activeOffers.isEmpty());
+
+        // Assert
+        assertNotNull(activeOffers);
+        assertTrue(activeOffers.isEmpty());
     }
 
     @Test
-    void shouldReturnActiveOffersByMerchant_whenMerchantIdExists() {
-        Long merchantId = 1L;
-        Offer offer = new Offer(); // Add proper initialization here
+    void shouldReturnActiveOffersByMerchant_whenValidMerchantId() {
+        // Arrange
+        Merchant merchant = new Merchant();
+        entityManager.persist(merchant);
+        entityManager.flush();
 
-        when(mockOfferRepository.findActiveOffersByMerchant(merchantId)).thenReturn(List.of(offer));
+        Offer offer = new Offer();
+        offer.setActive(true);
+        offer.setMerchant(merchant);
+        entityManager.persist(offer);
+        entityManager.flush();
 
-        List<Offer> activeOffers = offerRepository.findActiveOffersByMerchant(merchantId);
-        Assertions.assertNotNull(activeOffers);
-        Assertions.assertEquals(1, activeOffers.size());
+        // Act
+        List<Offer> activeOffers = offerRepository.findActiveOffersByMerchant(merchant.getId());
+
+        // Assert
+        assertNotNull(activeOffers);
+        assertEquals(1, activeOffers.size());
+        assertEquals(offer, activeOffers.get(0));
     }
 
     @Test
-    void shouldReturnEmptyList_whenMerchantIdHasNoActiveOffers() {
-        Long merchantId = 1L;
+    void shouldReturnNoActiveOffersByMerchant_whenInvalidMerchantId() {
+        // Arrange
+        Merchant merchant = new Merchant();
+        entityManager.persist(merchant);
+        entityManager.flush();
 
-        when(mockOfferRepository.findActiveOffersByMerchant(merchantId)).thenReturn(List.of());
+        // Act
+        List<Offer> activeOffers = offerRepository.findActiveOffersByMerchant(999L);
 
-        List<Offer> activeOffers = offerRepository.findActiveOffersByMerchant(merchantId);
-        Assertions.assertTrue(activeOffers.isEmpty());
+        // Assert
+        assertNotNull(activeOffers);
+        assertTrue(activeOffers.isEmpty());
     }
 
     @Test
-    void shouldReturnActiveOffersByCardNetwork_whenNetworkIdExists() {
-        Long networkId = 1L;
-        Offer offer = new Offer(); // Add proper initialization here
+    void shouldReturnActiveOffersByCardNetwork_whenValidNetworkId() {
+        // Arrange
+        CardNetwork cardNetwork = new CardNetwork();
+        entityManager.persist(cardNetwork);
+        entityManager.flush();
 
-        when(mockOfferRepository.findActiveOffersByCardNetwork(networkId)).thenReturn(List.of(offer));
+        Offer offer = new Offer();
+        offer.setActive(true);
+        offer.setCardNetwork(cardNetwork);
+        entityManager.persist(offer);
+        entityManager.flush();
 
-        List<Offer> activeOffers = offerRepository.findActiveOffersByCardNetwork(networkId);
-        Assertions.assertNotNull(activeOffers);
-        Assertions.assertEquals(1, activeOffers.size());
+        // Act
+        List<Offer> activeOffers = offerRepository.findActiveOffersByCardNetwork(cardNetwork.getId());
+
+        // Assert
+        assertNotNull(activeOffers);
+        assertEquals(1, activeOffers.size());
+        assertEquals(offer, activeOffers.get(0));
     }
 
     @Test
-    void shouldReturnEmptyList_whenNetworkIdHasNoActiveOffers() {
-        Long networkId = 1L;
+    void shouldReturnNoActiveOffersByCardNetwork_whenInvalidNetworkId() {
+        // Arrange
+        CardNetwork cardNetwork = new CardNetwork();
+        entityManager.persist(cardNetwork);
+        entityManager.flush();
 
-        when(mockOfferRepository.findActiveOffersByCardNetwork(networkId)).thenReturn(List.of());
+        // Act
+        List<Offer> activeOffers = offerRepository.findActiveOffersByCardNetwork(999L);
 
-        List<Offer> activeOffers = offerRepository.findActiveOffersByCardNetwork(networkId);
-        Assertions.assertTrue(activeOffers.isEmpty());
+        // Assert
+        assertNotNull(activeOffers);
+        assertTrue(activeOffers.isEmpty());
     }
 }

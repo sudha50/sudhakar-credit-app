@@ -1,88 +1,101 @@
 package com.cardoffers.oms.exception;
 
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Mock;
+import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import jakarta.servlet.http.HttpServletRequest;
-import org.junit.jupiter.api.BeforeEach;
+
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.Mockito;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.RequestMethod;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 @ExtendWith(MockitoExtension.class)
 class GlobalExceptionHandlerTest {
 
-    @InjectMocks
-    private GlobalExceptionHandler globalExceptionHandler;
-
-    @Mock
-    private HttpServletRequest request;
+    private final GlobalExceptionHandler exceptionHandler = new GlobalExceptionHandler();
 
     @Test
-    void shouldReturnNotFoundResponse_whenResourceNotFoundExceptionThrown() {
+    void shouldReturn404Response_whenResourceNotFoundExceptionIsThrown() {
         ResourceNotFoundException exception = new ResourceNotFoundException("Resource not found");
-        when(request.getRequestURI()).thenReturn("/test-uri");
+        @Mock
+        private HttpServletRequest request;
+        when(request.getRequestURI()).thenReturn("/test/resource");
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleResourceNotFound(exception, request);
+        ResponseEntity<ErrorResponse> response = exceptionHandler.handleResourceNotFound(exception, request);
 
-        assertEquals(HttpStatus.NOT_FOUND.value(), response.getStatusCodeValue());
+        assertEquals(HttpStatus.NOT_FOUND.value(), response.getBody().getStatus());
         assertEquals("Resource not found", response.getBody().getMessage());
-        assertEquals("/test-uri", response.getBody().getPath());
+        assertEquals("/test/resource", response.getBody().getPath());
     }
 
     @Test
-    void shouldReturnBadRequestResponse_whenValidationErrorsOccur() {
-        MethodArgumentNotValidException exception = mock(MethodArgumentNotValidException.class);
-        FieldError fieldError = new FieldError("testObject", "testField", "Test field error");
+    void shouldReturn400Response_whenMethodArgumentNotValidExceptionIsThrown() {
+        @Mock
+        private MethodArgumentNotValidException exception;
+        @Mock
+        private HttpServletRequest request;
+        when(request.getRequestURI()).thenReturn("/test/validate");
 
-        List<FieldError> fieldErrors = new ArrayList<>();
-        fieldErrors.add(fieldError);
-        when(exception.getBindingResult().getFieldErrors()).thenReturn(fieldErrors);
-        when(request.getRequestURI()).thenReturn("/test-uri");
+        FieldError fieldError = new FieldError("objectName", "field", "must not be null");
+        when(exception.getBindingResult().getFieldErrors()).thenReturn(List.of(fieldError));
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleValidationErrors(exception, request);
+        ResponseEntity<ErrorResponse> response = exceptionHandler.handleValidationErrors(exception, request);
 
-        assertEquals(HttpStatus.BAD_REQUEST.value(), response.getStatusCodeValue());
+        assertEquals(HttpStatus.BAD_REQUEST.value(), response.getBody().getStatus());
         assertEquals("Validation failed", response.getBody().getMessage());
-        assertEquals("/test-uri", response.getBody().getPath());
-        assertEquals(1, ((Map<String, String>) response.getBody().getDetails().get("fieldErrors")).size());
-        assertEquals("Test field error", ((Map<String, String>) response.getBody().getDetails().get("fieldErrors")).get("testField"));
+        assertEquals("/test/validate", response.getBody().getPath());
+        
+        Map<String, Object> details = response.getBody().getDetails();
+        assertNotNull(details);
+        assertTrue(details.containsKey("fieldErrors"));
+        assertEquals("must not be null", ((Map<?, ?>) details.get("fieldErrors")).get("field"));
     }
-
+    
     @Test
-    void shouldReturnBadRequestResponse_whenBusinessExceptionThrown() {
-        InvalidOfferException exception = new InvalidOfferException("Invalid offer");
-        when(request.getRequestURI()).thenReturn("/test-uri");
+    void shouldReturn400Response_whenBusinessExceptionIsThrown() {
+        RuntimeException exception = new InvalidOfferException("Invalid offer");
+        @Mock
+        private HttpServletRequest request;
+        when(request.getRequestURI()).thenReturn("/test/offer");
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleBusinessExceptions(exception, request);
+        ResponseEntity<ErrorResponse> response = exceptionHandler.handleBusinessExceptions(exception, request);
 
-        assertEquals(HttpStatus.BAD_REQUEST.value(), response.getStatusCodeValue());
+        assertEquals(HttpStatus.BAD_REQUEST.value(), response.getBody().getStatus());
         assertEquals("Invalid offer", response.getBody().getMessage());
-        assertEquals("/test-uri", response.getBody().getPath());
+        assertEquals("/test/offer", response.getBody().getPath());
     }
 
     @Test
-    void shouldReturnInternalServerErrorResponse_whenGenericExceptionThrown() {
+    void shouldReturn500Response_whenGenericExceptionIsThrown() {
         Exception exception = new Exception("Unexpected error");
-        when(request.getRequestURI()).thenReturn("/test-uri");
+        @Mock
+        private HttpServletRequest request;
+        when(request.getRequestURI()).thenReturn("/test/generic");
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleGenericException(exception, request);
+        ResponseEntity<ErrorResponse> response = exceptionHandler.handleGenericException(exception, request);
 
-        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR.value(), response.getStatusCodeValue());
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR.value(), response.getBody().getStatus());
         assertEquals("Unexpected error occurred", response.getBody().getMessage());
-        assertEquals("/test-uri", response.getBody().getPath());
-        assertEquals("Exception", response.getBody().getDetails().get("exception"));
+        assertEquals("/test/generic", response.getBody().getPath());
+        assertEquals("Exception", ((Map<String, Object>) response.getBody().getDetails()).get("exception"));
+    }
+
+    private static ErrorResponse anErrorResponse() {
+        ErrorResponse entity = new ErrorResponse();
+        return entity;
     }
 }

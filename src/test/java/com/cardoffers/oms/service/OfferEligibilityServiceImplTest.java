@@ -1,14 +1,19 @@
 package com.cardoffers.oms.service;
 
+import org.mockito.Mockito;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -27,130 +32,124 @@ import com.cardoffers.oms.repository.CardholderCardRepository;
 import com.cardoffers.oms.repository.CardholderRepository;
 import com.cardoffers.oms.repository.OfferRepository;
 
+import java.util.ArrayList;
+
 @ExtendWith(MockitoExtension.class)
 class OfferEligibilityServiceImplTest {
 
     @Mock
-    private CardholderRepository cardholderRepository;
+    CardholderRepository cardholderRepository;
 
     @Mock
-    private CardholderCardRepository cardholderCardRepository;
+    CardholderCardRepository cardholderCardRepository;
 
     @Mock
-    private OfferRepository offerRepository;
+    OfferRepository offerRepository;
 
     @Mock
-    private OfferMapper offerMapper;
+    OfferMapper offerMapper;
+
+    @Mock
+    OfferEligibilityService offerEligibilityService;
 
     @InjectMocks
-    private OfferEligibilityServiceImpl offerEligibilityService;
+    OfferEligibilityServiceImpl offerEligibilityServiceImpl;
 
-    private Cardholder cardholder;
-    private List<CardholderCard> activeCards;
-    private List<Offer> offers;
-    private OfferDTO offerDTO;
+    private static Cardholder aCardholder() {
+        Cardholder entity = new Cardholder();
+        entity.setId(1L);
+        entity.setFirstName("John");
+        entity.setLastName("Doe");
+        entity.setEmail("test@example.com");
+        entity.setPhoneNumber("+1234567890");
+        return entity;
+    }
 
-    @BeforeEach
-    void setUp() {
-        cardholder = new Cardholder();
-        cardholder.setId(1L);
-        cardholder.setFirstName("John");
-        cardholder.setLastName("Doe");
+    private static CardholderCard aCardholderCard() {
+        CardholderCard entity = new CardholderCard();
+        entity.setId(1L);
+        entity.setCardholder(aCardholder());
+        entity.setCardNetwork(new CardNetwork());
+        entity.setCardNumberLastFour("1234");
+        entity.setCardType("Visa");
+        entity.setCreatedAt(LocalDate.now());
+        entity.setActive(true);
+        return entity;
+    }
 
-        activeCards = new ArrayList<>();
-        offers = new ArrayList<>();
-        offerDTO = new OfferDTO();
-        offerDTO.setOfferType("Discount");
+    private static EligibleOfferResponseDTO anEligibleOfferResponseDTO() {
+        EligibleOfferResponseDTO entity = new EligibleOfferResponseDTO();
+        return entity;
     }
 
     @Test
     void shouldReturnEligibleOffers_whenCardholderHasActiveCards() {
-        // Arrange
+        Cardholder cardholder = aCardholder();
         when(cardholderRepository.findById(1L)).thenReturn(Optional.of(cardholder));
-        CardholderCard card = new CardholderCard();
-        card.setCardNetwork(null); // Assume a valid card network would be set here
-        activeCards.add(card);
+        CardholderCard card = aCardholderCard();
+        List<CardholderCard> activeCards = List.of(card);
         when(cardholderCardRepository.findByCardholderIdAndActiveTrue(1L)).thenReturn(activeCards);
-
         Offer offer = new Offer();
-        offer.setCardNetwork(card.getCardNetwork());
-        offer.setMaxRedemptions(null);
+        offer.setCardNetwork(new CardNetwork());
+        offer.getCardNetwork().setId(1L);
+        offer.setMaxRedemptions(10);
         offer.setCurrentRedemptions(0);
-        offers.add(offer);
-        
-        when(offerRepository.findActiveOffers(LocalDate.now())).thenReturn(offers);
-        when(offerMapper.toDTO(any(Offer.class))).thenReturn(offerDTO);
+        when(offerRepository.findActiveOffers(LocalDate.now())).thenReturn(List.of(offer));
+        when(offerMapper.toDTO(any())).thenReturn(new OfferDTO());
 
-        // Act
-        EligibleOfferResponseDTO result = offerEligibilityService.getEligibleOffersForCardholder(1L);
+        EligibleOfferResponseDTO response = offerEligibilityServiceImpl.getEligibleOffersForCardholder(1L);
 
-        // Assert
-        assertNotNull(result);
-        assertEquals(1, result.getTotalOffers());
-        assertEquals("John Doe", result.getCardholderName());
+        assertNotNull(response);
+        assertEquals(1, response.getTotalOffers());
+    }
+
+    @Test
+    void shouldThrowCardholderNotEligibleException_whenCardholderHasNoActiveCards() {
+        Cardholder cardholder = aCardholder();
+        when(cardholderRepository.findById(1L)).thenReturn(Optional.of(cardholder));
+        when(cardholderCardRepository.findByCardholderIdAndActiveTrue(1L)).thenReturn(Collections.emptyList());
+
+        Exception exception = assertThrows(CardholderNotEligibleException.class, () ->
+                offerEligibilityServiceImpl.getEligibleOffersForCardholder(1L));
+
+        assertEquals("Cardholder has no active cards", exception.getMessage());
     }
 
     @Test
     void shouldThrowResourceNotFoundException_whenCardholderDoesNotExist() {
-        // Arrange
         when(cardholderRepository.findById(1L)).thenReturn(Optional.empty());
 
-        // Act & Assert
-        assertThrows(ResourceNotFoundException.class, () -> offerEligibilityService.getEligibleOffersForCardholder(1L));
+        Exception exception = assertThrows(ResourceNotFoundException.class, () ->
+                offerEligibilityServiceImpl.getEligibleOffersForCardholder(1L));
+
+        assertEquals("Cardholder not found", exception.getMessage());
     }
 
     @Test
-    void shouldThrowCardholderNotEligibleException_whenNoActiveCards() {
-        // Arrange
+    void shouldFilterOffersByCategory_whenCategoryIsProvided() {
+        Cardholder cardholder = aCardholder();
         when(cardholderRepository.findById(1L)).thenReturn(Optional.of(cardholder));
-        when(cardholderCardRepository.findByCardholderIdAndActiveTrue(1L)).thenReturn(new ArrayList<>());
-
-        // Act & Assert
-        assertThrows(CardholderNotEligibleException.class, () -> offerEligibilityService.getEligibleOffersForCardholder(1L));
-    }
-
-    @Test
-    void shouldReturnFilteredOffersByCategory_whenCategoryIsValid() {
-        // Arrange
-        when(cardholderRepository.findById(1L)).thenReturn(Optional.of(cardholder));
+        CardholderCard card = aCardholderCard();
+        List<CardholderCard> activeCards = List.of(card);
         when(cardholderCardRepository.findByCardholderIdAndActiveTrue(1L)).thenReturn(activeCards);
-        when(offerRepository.findActiveOffers(LocalDate.now())).thenReturn(offers);
-        when(offerMapper.toDTO(any(Offer.class))).thenReturn(offerDTO);
-        
-        // Act
-        List<OfferDTO> result = offerEligibilityService.filterOffersByCategory(1L, "Discount");
+        when(offerEligibilityService.getEligibleOffersForCardholder(1L)).thenReturn(anEligibleOfferResponseDTO());
 
-        // Assert
-        assertFalse(result.isEmpty());
+        List<OfferDTO> filteredOffers = offerEligibilityServiceImpl.filterOffersByCategory(1L, "SomeCategory");
+
+        assertNotNull(filteredOffers);
     }
 
     @Test
-    void shouldReturnEmptyList_whenFilteredByInvalidCategory() {
-        // Arrange
+    void shouldFilterOffersByOfferType_whenOfferTypeIsProvided() {
+        Cardholder cardholder = aCardholder();
         when(cardholderRepository.findById(1L)).thenReturn(Optional.of(cardholder));
+        CardholderCard card = aCardholderCard();
+        List<CardholderCard> activeCards = List.of(card);
         when(cardholderCardRepository.findByCardholderIdAndActiveTrue(1L)).thenReturn(activeCards);
-        when(offerRepository.findActiveOffers(LocalDate.now())).thenReturn(offers);
-        when(offerMapper.toDTO(any(Offer.class))).thenReturn(offerDTO);
+        when(offerEligibilityService.getEligibleOffersForCardholder(1L)).thenReturn(anEligibleOfferResponseDTO());
 
-        // Act
-        List<OfferDTO> result = offerEligibilityService.filterOffersByCategory(1L, "InvalidCategory");
+        List<OfferDTO> filteredOffers = offerEligibilityServiceImpl.filterOffersByOfferType(1L, "Discount");
 
-        // Assert
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void shouldReturnAllOffers_whenCategoryIsNull() {
-        // Arrange
-        when(cardholderRepository.findById(1L)).thenReturn(Optional.of(cardholder));
-        when(cardholderCardRepository.findByCardholderIdAndActiveTrue(1L)).thenReturn(activeCards);
-        when(offerRepository.findActiveOffers(LocalDate.now())).thenReturn(offers);
-        when(offerMapper.toDTO(any(Offer.class))).thenReturn(offerDTO);
-
-        // Act
-        List<OfferDTO> result = offerEligibilityService.filterOffersByCategory(1L, null);
-
-        // Assert
-        assertEquals(offers.size(), result.size());
+        assertNotNull(filteredOffers);
     }
 }

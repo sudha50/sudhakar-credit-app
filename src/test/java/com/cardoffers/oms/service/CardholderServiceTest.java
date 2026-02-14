@@ -1,95 +1,108 @@
 package com.cardoffers.oms.service;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
+import org.mockito.Mockito;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import com.cardoffers.oms.model.dto.CardholderDTO;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import java.util.Collections;
-import java.util.List;
+
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CardholderServiceTest {
 
-    @Mock
+    @InjectMocks 
     private CardholderService cardholderService;
 
-    @InjectMocks
-    private CardholderServiceImpl cardholderServiceImpl; // Assuming you will implement this service
+    @Mock 
+    private CardholderRepository cardholderRepository; // Assume this is the repository interface
 
-    private CardholderDTO cardholderDTO;
-
-    @BeforeEach
-    void setUp() {
-        cardholderDTO = new CardholderDTO(); // Populate with required fields
-        cardholderDTO.setId(1L);
-        cardholderDTO.setEmail("test@example.com");
-        // Add other required fields
+    @Test
+    void shouldReturnCardholder_whenCardholderExists() {
+        CardholderDTO expectedCardholder = aCardholderDTO();
+        expectedCardholder.setId(1L);
+        when(cardholderRepository.findById(1L)).thenReturn(Optional.of(expectedCardholder));
+        
+        CardholderDTO actualCardholder = cardholderService.getCardholderById(1L);
+        
+        assertNotNull(actualCardholder);
+        assertEquals(expectedCardholder.getId(), actualCardholder.getId());
+        assertEquals(expectedCardholder.getFirstName(), actualCardholder.getFirstName());
     }
 
     @Test
-    void shouldReturnCardholder_whenValidIdProvided() {
-        when(cardholderService.getCardholderById(1L)).thenReturn(cardholderDTO);
+    void shouldReturnNull_whenCardholderDoesNotExist() {
+        when(cardholderRepository.findById(any())).thenReturn(Optional.empty());
 
-        CardholderDTO result = cardholderServiceImpl.getCardholderById(1L);
+        CardholderDTO actualCardholder = cardholderService.getCardholderById(1L);
 
-        assertNotNull(result);
-        assertEquals("test@example.com", result.getEmail());
+        assertNull(actualCardholder);
     }
 
     @Test
-    void shouldReturnCardholder_whenValidEmailProvided() {
-        when(cardholderService.getCardholderByEmail("test@example.com")).thenReturn(cardholderDTO);
-
-        CardholderDTO result = cardholderServiceImpl.getCardholderByEmail("test@example.com");
-
-        assertNotNull(result);
-        assertEquals(1L, result.getId());
+    void shouldReturnCardholder_whenEmailExists() {
+        CardholderDTO expectedCardholder = aCardholderDTO();
+        expectedCardholder.setId(1L);
+        when(cardholderRepository.findByEmail("test@example.com")).thenReturn(Optional.of(expectedCardholder));
+        
+        CardholderDTO actualCardholder = cardholderService.getCardholderByEmail("test@example.com");
+        
+        assertNotNull(actualCardholder);
+        assertEquals(expectedCardholder.getEmail(), actualCardholder.getEmail());
     }
 
     @Test
-    void shouldReturnAllActiveCardholders_whenCalled() {
-        when(cardholderService.getAllActiveCardholders()).thenReturn(Collections.singletonList(cardholderDTO));
+    void shouldReturnNull_whenEmailDoesNotExist() {
+        when(cardholderRepository.findByEmail(any())).thenReturn(Optional.empty());
 
-        List<CardholderDTO> result = cardholderServiceImpl.getAllActiveCardholders();
+        CardholderDTO actualCardholder = cardholderService.getCardholderByEmail("test@example.com");
 
-        assertNotNull(result);
-        assertEquals(1, result.size());
+        assertNull(actualCardholder);
     }
 
     @Test
-    void shouldReturnPersistedCardholder_whenCreating() {
-        when(cardholderService.createCardholder(cardholderDTO)).thenReturn(cardholderDTO);
-
-        CardholderDTO result = cardholderServiceImpl.createCardholder(cardholderDTO);
-
-        assertNotNull(result);
-        assertEquals(cardholderDTO.getId(), result.getId());
+    void shouldCreateCardholder_whenValidDataProvided() {
+        CardholderDTO cardholderToCreate = aCardholderDTO();
+        when(cardholderRepository.save(any(CardholderDTO.class))).thenReturn(cardholderToCreate);
+        
+        CardholderDTO createdCardholder = cardholderService.createCardholder(cardholderToCreate);
+        
+        assertNotNull(createdCardholder);
+        assertEquals(cardholderToCreate.getFirstName(), createdCardholder.getFirstName());
     }
 
     @Test
-    void shouldUpdateCardholder_whenValidIdAndDtoProvided() {
-        when(cardholderService.updateCardholder(1L, cardholderDTO)).thenReturn(cardholderDTO);
+    void shouldUpdateCardholder_whenValidIdProvided() {
+        CardholderDTO existingCardholder = aCardholderDTO();
+        existingCardholder.setId(1L);
+        CardholderDTO updatedData = aCardholderDTO();
+        updatedData.setFirstName("Jane");
 
-        CardholderDTO result = cardholderServiceImpl.updateCardholder(1L, cardholderDTO);
+        when(cardholderRepository.findById(1L)).thenReturn(Optional.of(existingCardholder));
+        when(cardholderRepository.save(any(CardholderDTO.class))).thenReturn(updatedData);
 
-        assertNotNull(result);
-        assertEquals(cardholderDTO.getEmail(), result.getEmail());
+        CardholderDTO updatedCardholder = cardholderService.updateCardholder(1L, updatedData);
+
+        assertNotNull(updatedCardholder);
+        assertEquals(updatedData.getFirstName(), updatedCardholder.getFirstName());
     }
 
-    @Test
-    void shouldThrowException_whenCardholderNotFound() {
-        when(cardholderService.getCardholderById(99L)).thenThrow(new RuntimeException("Cardholder not found"));
-
-        Exception exception = assertThrows(RuntimeException.class, () -> {
-            cardholderServiceImpl.getCardholderById(99L);
-        });
-
-        assertEquals("Cardholder not found", exception.getMessage());
+    private static CardholderDTO aCardholderDTO() {
+        CardholderDTO entity = new CardholderDTO();
+        entity.setFirstName("John");
+        entity.setLastName("Doe");
+        entity.setEmail("test@example.com");
+        entity.setPhoneNumber("+1234567890");
+        entity.setActive(true);
+        entity.setCardNetworks(null); // Set List here as required
+        return entity;
     }
 }

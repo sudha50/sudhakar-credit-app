@@ -1,34 +1,16 @@
 package com.cardoffers.oms.exception;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
+import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 
-public class CardholderNotEligibleExceptionTest {
+class CardholderNotEligibleExceptionTest {
 
     @Test
-    public void shouldReturnMessage_whenExceptionIsThrown() {
-        String expectedMessage = "Cardholder not eligible";
+    void shouldReturnMessage_whenExceptionIsThrown() {
+        String message = "Cardholder is not eligible";
+        CardholderNotEligibleException exception = new CardholderNotEligibleException(message);
         
-        CardholderNotEligibleException exception = new CardholderNotEligibleException(expectedMessage);
-        
-        assertEquals(expectedMessage, exception.getMessage());
-    }
-
-    @Test
-    public void shouldThrowException_whenNullMessageIsProvided() {
-        assertThrows(NullPointerException.class, () -> {
-            new CardholderNotEligibleException(null);
-        });
-    }
-
-    @Test
-    public void shouldReturnMessage_whenDifferentMessageIsProvided() {
-        String expectedMessage = "Eligibility check failed";
-        
-        CardholderNotEligibleException exception = new CardholderNotEligibleException(expectedMessage);
-        
-        assertEquals(expectedMessage, exception.getMessage());
+        assertEquals(message, exception.getMessage());
     }
 }

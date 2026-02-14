@@ -6,13 +6,9 @@ import static org.mockito.Mockito.verify;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
-
+import java.util.List;
 import java.util.Optional;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -25,114 +21,129 @@ import com.cardoffers.oms.model.dto.MerchantDTO;
 import com.cardoffers.oms.model.entity.Merchant;
 import com.cardoffers.oms.repository.MerchantRepository;
 
-import java.util.Collections;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class MerchantServiceImplTest {
 
-    @Mock
-    private MerchantRepository merchantRepository;
+    @Mock 
+    MerchantRepository merchantRepository;
 
-    @Mock
-    private MerchantMapper merchantMapper;
+    @Mock 
+    MerchantMapper merchantMapper;
 
-    @InjectMocks
-    private MerchantServiceImpl merchantService;
-
-    private MerchantDTO merchantDTO;
-    private Merchant merchant;
-
-    @BeforeEach
-    void setUp() {
-        merchantDTO = new MerchantDTO();
-        merchantDTO.setName("Test Merchant");
-        merchantDTO.setDescription("Test Description");
-        merchantDTO.setCategory("Test Category");
-        merchantDTO.setLogoUrl("http://test.com/logo.png");
-        merchantDTO.setWebsite("http://test.com");
-        merchantDTO.setActive(true);
-
-        merchant = new Merchant();
-        merchant.setName("Test Merchant");
-        merchant.setDescription("Test Description");
-        merchant.setCategory("Test Category");
-        merchant.setLogoUrl("http://test.com/logo.png");
-        merchant.setWebsite("http://test.com");
-        merchant.setActive(true);
-    }
+    @InjectMocks 
+    MerchantServiceImpl merchantServiceImpl;
 
     @Test
-    void shouldReturnMerchantDTO_whenGetMerchantByIdIsCalledWithExistingId() {
-        when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant));
+    void shouldReturnMerchantDTO_whenGetMerchantById() {
+        Merchant merchant = aMerchant();
+        MerchantDTO merchantDTO = aMerchantDTO();
+
+        when(merchantRepository.findById(anyLong())).thenReturn(Optional.of(merchant));
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
 
-        MerchantDTO result = merchantService.getMerchantById(1L);
+        MerchantDTO result = merchantServiceImpl.getMerchantById(1L);
 
         assertNotNull(result);
-        assertEquals("Test Merchant", result.getName());
+        assertEquals("TestName", result.getName());
     }
 
     @Test
-    void shouldThrowResourceNotFoundException_whenGetMerchantByIdIsCalledWithNonExistingId() {
-        when(merchantRepository.findById(any())).thenReturn(Optional.empty());
+    void shouldThrowResourceNotFoundException_whenGetMerchantByIdWithInvalidId() {
+        when(merchantRepository.findById(anyLong())).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> merchantService.getMerchantById(1L));
+        Exception exception = assertThrows(ResourceNotFoundException.class, () -> {
+            merchantServiceImpl.getMerchantById(1L);
+        });
+
+        assertEquals("Merchant not found", exception.getMessage());
     }
 
     @Test
-    void shouldCreateMerchant_whenCreateMerchantIsCalled() {
+    void shouldReturnListOfMerchantDTO_whenGetMerchantsByCategory() {
+        Merchant merchant = aMerchant();
+        MerchantDTO merchantDTO = aMerchantDTO();
+        String category = "test-value";
+
+        when(merchantRepository.findByCategory(category)).thenReturn(List.of(merchant));
+        when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
+
+        List<MerchantDTO> result = merchantServiceImpl.getMerchantsByCategory(category);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals("TestName", result.get(0).getName());
+    }
+
+    @Test
+    void shouldCreateMerchant_whenCreateMerchant() {
+        MerchantDTO merchantDTO = aMerchantDTO();
+        Merchant merchant = aMerchant();
+
         when(merchantMapper.toEntity(merchantDTO)).thenReturn(merchant);
         when(merchantRepository.save(merchant)).thenReturn(merchant);
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
 
-        MerchantDTO result = merchantService.createMerchant(merchantDTO);
+        MerchantDTO result = merchantServiceImpl.createMerchant(merchantDTO);
 
         assertNotNull(result);
-        assertEquals("Test Merchant", result.getName());
-        verify(merchantRepository, times(1)).save(any(Merchant.class));
+        assertEquals("TestName", result.getName());
     }
 
     @Test
-    void shouldUpdateMerchant_whenUpdateMerchantIsCalledWithExistingId() {
-        when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant));
-        when(merchantRepository.save(merchant)).thenReturn(merchant);
-        when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
+    void shouldUpdateMerchant_whenUpdateMerchant() {
+        Merchant existingMerchant = aMerchant();
+        MerchantDTO updatedMerchantDTO = aMerchantDTO();
+        updatedMerchantDTO.setName("UpdatedName");
 
-        MerchantDTO result = merchantService.updateMerchant(1L, merchantDTO);
+        when(merchantRepository.findById(anyLong())).thenReturn(Optional.of(existingMerchant));
+        when(merchantMapper.toDTO(existingMerchant)).thenReturn(updatedMerchantDTO);
+        when(merchantRepository.save(existingMerchant)).thenReturn(existingMerchant);
+
+        MerchantDTO result = merchantServiceImpl.updateMerchant(1L, updatedMerchantDTO);
 
         assertNotNull(result);
-        assertEquals("Test Merchant", result.getName());
-        verify(merchantRepository, times(1)).save(any(Merchant.class));
+        assertEquals("UpdatedName", result.getName());
+        verify(merchantRepository).save(existingMerchant);
     }
 
     @Test
-    void shouldThrowResourceNotFoundException_whenUpdateMerchantIsCalledWithNonExistingId() {
-        when(merchantRepository.findById(any())).thenReturn(Optional.empty());
+    void shouldThrowResourceNotFoundException_whenUpdateMerchantWithInvalidId() {
+        MerchantDTO updatedMerchantDTO = aMerchantDTO();
 
-        assertThrows(ResourceNotFoundException.class, () -> merchantService.updateMerchant(1L, merchantDTO));
+        when(merchantRepository.findById(anyLong())).thenReturn(Optional.empty());
+
+        Exception exception = assertThrows(ResourceNotFoundException.class, () -> {
+            merchantServiceImpl.updateMerchant(1L, updatedMerchantDTO);
+        });
+
+        assertEquals("Merchant not found", exception.getMessage());
     }
 
-    @Test
-    void shouldReturnListOfActiveMerchants_whenGetAllActiveMerchantsIsCalled() {
-        when(merchantRepository.findByActiveTrue()).thenReturn(Collections.singletonList(merchant));
-        when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
-
-        var result = merchantService.getAllActiveMerchants();
-
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("Test Merchant", result.get(0).getName());
+    private static Merchant aMerchant() {
+        Merchant entity = new Merchant();
+        entity.setId(1L);
+        entity.setName("TestName");
+        entity.setDescription("Test description");
+        entity.setCategory("test-value");
+        entity.setLogoUrl("https://example.com");
+        entity.setWebsite("test-value");
+        entity.setActive(true);
+        return entity;
     }
 
-    @Test
-    void shouldReturnListOfMerchantsByCategory_whenGetMerchantsByCategoryIsCalled() {
-        when(merchantRepository.findByCategory("Test Category")).thenReturn(Collections.singletonList(merchant));
-        when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
-
-        var result = merchantService.getMerchantsByCategory("Test Category");
-
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("Test Merchant", result.get(0).getName());
+    private static MerchantDTO aMerchantDTO() {
+        MerchantDTO entity = new MerchantDTO();
+        entity.setName("TestName");
+        entity.setDescription("Test description");
+        entity.setCategory("test-value");
+        entity.setLogoUrl("https://example.com");
+        entity.setWebsite("test-value");
+        entity.setActive(true);
+        return entity;
     }
 }

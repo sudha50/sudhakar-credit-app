@@ -1,76 +1,95 @@
 package com.cardoffers.oms.repository;
 
-import com.cardoffers.oms.model.entity.Cardholder;
-import org.junit.jupiter.api.DisplayName;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.test.context.ActiveProfiles;
 
-import java.util.List;
-import java.util.Optional;
+import com.cardoffers.oms.model.entity.Cardholder;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-@DataJdbcTest
-@Transactional
+@DataJpaTest
+@ActiveProfiles("test")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 class CardholderRepositoryTest {
 
-    @Autowired
-    private CardholderRepository cardholderRepository;
+    @Autowired 
+    TestEntityManager entityManager;
 
-    @Autowired
-    private TestEntityManager testEntityManager;
+    @Autowired 
+    CardholderRepository cardholderRepository;
+
+    private static Cardholder aCardholder() {
+        Cardholder entity = new Cardholder();
+        entity.setId(1L);
+        entity.setFirstName("John");
+        entity.setLastName("Doe");
+        entity.setEmail("test@example.com");
+        entity.setPhoneNumber("+1234567890");
+        entity.setCreatedAt(LocalDateTime.of(2025, 1, 15, 10, 30));
+        entity.setUpdatedAt(LocalDateTime.of(2025, 1, 15, 10, 30));
+        entity.setActive(true);
+        entity.setNow(LocalDateTime.of(2025, 1, 15, 10, 30));
+        entity.setCards(null);
+        return entity;
+    }
 
     @Test
-    @DisplayName("shouldReturnCardholder_whenEmailExists")
     void shouldReturnCardholder_whenEmailExists() {
-        Cardholder cardholder = new Cardholder();
-        cardholder.setEmail("test@example.com");
-        cardholder.setActive(true);
-        testEntityManager.persist(cardholder);
-        testEntityManager.flush();
+        Cardholder cardholder = aCardholder();
+        entityManager.persist(cardholder);
+        entityManager.flush();
 
-        Optional<Cardholder> found = cardholderRepository.findByEmail("test@example.com");
-        assertThat(found).isPresent();
-        assertThat(found.get().getEmail()).isEqualTo("test@example.com");
+        var found = cardholderRepository.findByEmail("test@example.com");
+
+        assertTrue(found.isPresent());
+        assertEquals("John", found.get().getFirstName());
     }
 
     @Test
-    @DisplayName("shouldReturnEmpty_whenEmailDoesNotExist")
     void shouldReturnEmpty_whenEmailDoesNotExist() {
-        Optional<Cardholder> found = cardholderRepository.findByEmail("nonexistent@example.com");
-        assertThat(found).isNotPresent();
+        var found = cardholderRepository.findByEmail("nonexistent@example.com");
+        
+        assertFalse(found.isPresent());
     }
 
     @Test
-    @DisplayName("shouldReturnActiveCardholders_whenThereAreActiveOnes")
-    void shouldReturnActiveCardholders_whenThereAreActiveOnes() {
-        Cardholder activeCardholder = new Cardholder();
-        activeCardholder.setEmail("active@example.com");
-        activeCardholder.setActive(true);
-        testEntityManager.persist(activeCardholder);
-
-        Cardholder inactiveCardholder = new Cardholder();
-        inactiveCardholder.setEmail("inactive@example.com");
+    void shouldReturnActiveCardholders_whenCalled() {
+        Cardholder activeCardholder = aCardholder();
+        entityManager.persist(activeCardholder);
+        
+        Cardholder inactiveCardholder = aCardholder();
         inactiveCardholder.setActive(false);
-        testEntityManager.persist(inactiveCardholder);
+        entityManager.persist(inactiveCardholder);
+        
+        entityManager.flush();
 
         List<Cardholder> activeCardholders = cardholderRepository.findByActiveTrue();
-        assertThat(activeCardholders).hasSize(1);
-        assertThat(activeCardholders.get(0).getEmail()).isEqualTo("active@example.com");
+        
+        assertEquals(1, activeCardholders.size());
+        assertEquals("John", activeCardholders.get(0).getFirstName());
     }
 
     @Test
-    @DisplayName("shouldReturnEmptyList_whenNoActiveCardholders")
     void shouldReturnEmptyList_whenNoActiveCardholders() {
-        Cardholder inactiveCardholder = new Cardholder();
-        inactiveCardholder.setEmail("inactive@example.com");
+        Cardholder inactiveCardholder = aCardholder();
         inactiveCardholder.setActive(false);
-        testEntityManager.persist(inactiveCardholder);
+        entityManager.persist(inactiveCardholder);
+        
+        entityManager.flush();
 
         List<Cardholder> activeCardholders = cardholderRepository.findByActiveTrue();
-        assertThat(activeCardholders).isEmpty();
+        
+        assertTrue(activeCardholders.isEmpty());
     }
 }

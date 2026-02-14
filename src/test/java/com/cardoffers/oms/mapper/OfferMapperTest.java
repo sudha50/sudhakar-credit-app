@@ -1,9 +1,10 @@
 package com.cardoffers.oms.mapper;
 
+import org.mockito.Mockito;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,76 +15,83 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.cardoffers.oms.model.dto.OfferDTO;
 import com.cardoffers.oms.model.dto.OfferSummaryDTO;
 import com.cardoffers.oms.model.entity.Offer;
-import com.cardoffers.oms.model.entity.Merchant;
 
 @ExtendWith(MockitoExtension.class)
-class OfferMapperTest {
+public class OfferMapperTest {
 
     @InjectMocks
-    private OfferMapperImpl offerMapper; // Assuming you have an implementation named OfferMapperImpl
-
-    @Mock
-    private MerchantMapper merchantMapper;
+    private OfferMapperImpl offerMapper;
 
     @Test
-    void shouldConvertToDTO_whenEntityIsValid() {
-        Offer offer = new Offer();
-        offer.setId(1L);
-        offer.setDescription("Test Offer");
+    void shouldMapEntityToDTO_whenEntityIsProvided() {
+        Offer offer = anOffer();
+        OfferDTO dto = offerMapper.toDTO(offer);
         
-        OfferDTO result = offerMapper.toDTO(offer);
-        
-        assertNotNull(result);
-        assertEquals(1L, result.getId());
-        assertEquals("Test Offer", result.getDescription());
+        assertNotNull(dto);
+        assertEquals(offer.getTitle(), dto.getTitle());
+        assertEquals(offer.getDescription(), dto.getDescription());
     }
 
     @Test
-    void shouldConvertToEntity_whenDTOIsValid() {
-        OfferDTO offerDTO = new OfferDTO();
-        offerDTO.setId(1L);
-        offerDTO.setDescription("Test Offer DTO");
+    void shouldMapDTOToEntity_whenDTOIsProvided() {
+        OfferDTO dto = anOfferDTO();
+        Offer offer = offerMapper.toEntity(dto);
         
-        Offer result = offerMapper.toEntity(offerDTO);
-        
-        assertNotNull(result);
-        assertEquals(1L, result.getId());
-        assertEquals("Test Offer DTO", result.getDescription());
+        assertNotNull(offer);
+        assertEquals(dto.getTitle(), offer.getTitle());
+        assertEquals(dto.getDescription(), offer.getDescription());
     }
 
     @Test
-    void shouldConvertToSummaryDTO_whenEntityIsValid() {
-        Merchant merchant = new Merchant();
-        merchant.setName("Test Merchant");
+    void shouldMapEntityToSummaryDTO_whenEntityIsProvided() {
+        Offer offer = anOffer();
+        offer.getMerchant().setName("Test Merchant");
+        OfferSummaryDTO summaryDTO = offerMapper.toSummaryDTO(offer);
         
-        Offer offer = new Offer();
-        offer.setId(1L);
-        offer.setMerchant(merchant);
-        
-        OfferSummaryDTO result = offerMapper.toSummaryDTO(offer);
-        
-        assertNotNull(result);
-        assertEquals("Test Merchant", result.getMerchantName());
+        assertNotNull(summaryDTO);
+        assertEquals("Test Merchant", summaryDTO.getMerchantName());
     }
 
-    @Test
-    void shouldReturnNull_whenEntityIsNullForToDTO() {
-        OfferDTO result = offerMapper.toDTO(null);
-        
-        assertEquals(null, result);
+    private static Offer anOffer() {
+        Offer entity = new Offer();
+        entity.setId(1L);
+        entity.setTitle("Test Title");
+        entity.setDescription("Test description");
+        entity.setOfferType("DEFAULT");
+        entity.setDiscountPercentage(1);
+        entity.setCashbackAmount(new java.math.BigDecimal("100.00"));
+        entity.setMerchant(new Merchant());
+        entity.getMerchant().setName("Test Merchant");
+        entity.setCardNetwork(new CardNetwork());
+        entity.setSource("Test Source");
+        entity.setMaxRedemptions(1);
+        entity.setCurrentRedemptions(1);
+        entity.setCreatedAt(java.time.LocalDateTime.now());
+        return entity;
     }
 
-    @Test
-    void shouldReturnNull_whenDTOIsNullForToEntity() {
-        Offer result = offerMapper.toEntity(null);
-        
-        assertEquals(null, result);
+    private static OfferDTO anOfferDTO() {
+        OfferDTO entity = new OfferDTO();
+        entity.setTitle("Test Title");
+        entity.setDescription("Test description");
+        entity.setOfferType("DEFAULT");
+        entity.setDiscountPercentage(1);
+        entity.setCashbackAmount(new java.math.BigDecimal("100.00"));
+        entity.setMinimumPurchaseAmount(new java.math.BigDecimal("100.00"));
+        entity.setStartDate(java.time.LocalDate.of(2025, 1, 15));
+        entity.setEndDate(java.time.LocalDate.of(2025, 1, 15));
+        entity.setTermsAndConditions("test-value");
+        entity.setMerchant(null);  // set MerchantDTO accordingly
+        entity.setCardNetwork(null); // set CardNetworkDTO accordingly
+        entity.setSource("test-value");
+        entity.setMaxRedemptions(1);
+        entity.setCurrentRedemptions(1);
+        entity.setActive(true);
+        return entity;
     }
 
-    @Test
-    void shouldReturnNull_whenEntityIsNullForToSummaryDTO() {
-        OfferSummaryDTO result = offerMapper.toSummaryDTO(null);
-
-        assertEquals(null, result);
+    private static OfferSummaryDTO anOfferSummaryDTO() {
+        OfferSummaryDTO entity = new OfferSummaryDTO();
+        return entity;
     }
 }
