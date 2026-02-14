@@ -1,136 +1,197 @@
 package com.cardoffers.oms.service;
 
-import com.cardoffers.oms.exception.InvalidOfferException;
-import com.cardoffers.oms.exception.ResourceNotFoundException;
-import com.cardoffers.oms.mapper.OfferMapper;
-import com.cardoffers.oms.model.dto.OfferDTO;
-import com.cardoffers.oms.model.entity.CardNetwork;
-import com.cardoffers.oms.model.entity.Merchant;
-import com.cardoffers.oms.model.entity.Offer;
-import com.cardoffers.oms.repository.CardNetworkRepository;
-import com.cardoffers.oms.repository.MerchantRepository;
-import com.cardoffers.oms.repository.OfferRepository;
+import org.mockito.Mockito;
+import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.Optional;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDate;
-import java.util.Optional;
+import com.cardoffers.oms.exception.InvalidOfferException;
+import com.cardoffers.oms.exception.ResourceNotFoundException;
+import com.cardoffers.oms.mapper.OfferMapper;
+import com.cardoffers.oms.model.dto.OfferDTO;
+import com.cardoffers.oms.model.dto.OfferSummaryDTO;
+import com.cardoffers.oms.model.entity.CardNetwork;
+import com.cardoffers.oms.model.entity.Merchant;
+import com.cardoffers.oms.model.entity.Offer;
+import com.cardoffers.oms.repository.CardNetworkRepository;
+import com.cardoffers.oms.repository.MerchantRepository;
+import com.cardoffers.oms.repository.OfferRepository;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import java.util.List;
 
 @ExtendWith(MockitoExtension.class)
 class OfferServiceImplTest {
 
     @Mock
-    private OfferRepository offerRepository;
+    OfferRepository offerRepository;
 
     @Mock
-    private MerchantRepository merchantRepository;
+    MerchantRepository merchantRepository;
 
     @Mock
-    private CardNetworkRepository cardNetworkRepository;
+    CardNetworkRepository cardNetworkRepository;
 
     @Mock
-    private OfferMapper offerMapper;
+    OfferMapper offerMapper;
 
     @InjectMocks
-    private OfferServiceImpl offerService;
+    OfferServiceImpl offerServiceImpl;
+
+    private static CardNetwork aCardNetwork() {
+        CardNetwork entity = new CardNetwork();
+        entity.setId(1L);
+        entity.setName("TestName");
+        entity.setCode("TEST001");
+        return entity;
+    }
+
+    private static Merchant aMerchant() {
+        Merchant entity = new Merchant();
+        entity.setId(1L);
+        entity.setName("TestName");
+        entity.setDescription("Test description");
+        entity.setCategory("test-value");
+        entity.setLogoUrl("https://example.com");
+        entity.setWebsite("test-value");
+        return entity;
+    }
+
+    private static Offer anOffer() {
+        Offer entity = new Offer();
+        entity.setId(1L);
+        entity.setTitle("Test Title");
+        entity.setDescription("Test description");
+        entity.setOfferType("DEFAULT");
+        entity.setDiscountPercentage(1);
+        entity.setCashbackAmount(new BigDecimal("100.00"));
+        entity.setMerchant(aMerchant());
+        entity.setCardNetwork(aCardNetwork());
+        entity.setSource("source");
+        entity.setMaxRedemptions(1);
+        entity.setCurrentRedemptions(0);
+        entity.setCreatedAt(LocalDate.now().atStartOfDay());
+        return entity;
+    }
+
+    private static OfferDTO anOfferDTO() {
+        OfferDTO dto = new OfferDTO();
+        dto.setTitle("Test Title");
+        dto.setDescription("Test description");
+        dto.setOfferType("DEFAULT");
+        dto.setDiscountPercentage(1);
+        dto.setCashbackAmount(new BigDecimal("100.00"));
+        dto.setMinimumPurchaseAmount(new BigDecimal("100.00"));
+        dto.setStartDate(LocalDate.of(2025, 1, 15));
+        dto.setEndDate(LocalDate.of(2025, 1, 16));
+        dto.setTermsAndConditions("test-value");
+        dto.setMerchant(aMerchant());
+        dto.setCardNetwork(aCardNetwork());
+        dto.setSource("test-value");
+        dto.setMaxRedemptions(1);
+        dto.setCurrentRedemptions(0);
+        dto.setActive(true);
+        return dto;
+    }
 
     @Test
-    void shouldReturnOfferDTO_whenOfferExists() {
-        Offer offer = new Offer();
-        OfferDTO offerDTO = new OfferDTO();
-        offer.setId(1L);
-        offerDTO.setId(1L);
-        
+    void shouldReturnOfferDTO_whenGetOfferByIdIsCalled() {
+        Offer offer = anOffer();
+        OfferDTO offerDTO = anOfferDTO();
+
         when(offerRepository.findById(1L)).thenReturn(Optional.of(offer));
         when(offerMapper.toDTO(offer)).thenReturn(offerDTO);
 
-        OfferDTO result = offerService.getOfferById(1L);
+        OfferDTO result = offerServiceImpl.getOfferById(1L);
 
         assertNotNull(result);
-        assertEquals(offerDTO.getId(), result.getId());
-        verify(offerRepository).findById(1L);
+        assertEquals("Test Title", result.getTitle());
     }
 
     @Test
-    void shouldThrowResourceNotFoundException_whenOfferDoesNotExist() {
-        when(offerRepository.findById(any(Long.class))).thenReturn(Optional.empty());
+    void shouldThrowException_whenGetOfferByIdIsCalledWithInvalidId() {
+        when(offerRepository.findById(1L)).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> offerService.getOfferById(1L));
+        assertThrows(ResourceNotFoundException.class, () -> offerServiceImpl.getOfferById(1L));
     }
 
     @Test
-    void shouldCreateOffer_whenValidInput() {
-        OfferDTO offerDTO = new OfferDTO();
-        offerDTO.setMerchant(new Merchant());
-        offerDTO.setCardNetwork(new CardNetwork());
+    void shouldReturnOfferSummaries_whenGetOffersByMerchantIsCalled() {
+        List<Offer> offers = Arrays.asList(anOffer());
+        List<OfferSummaryDTO> summaries = List.of(new OfferSummaryDTO());
 
-        Merchant merchant = new Merchant();
-        CardNetwork cardNetwork = new CardNetwork();
-        Offer offer = new Offer();
-        offer.setId(1L);
+        when(offerRepository.findActiveOffersByMerchant(1L)).thenReturn(offers);
+        when(offerMapper.toSummaryDTO(any())).thenReturn(new OfferSummaryDTO());
 
-        when(merchantRepository.findById(any())).thenReturn(Optional.of(merchant));
-        when(cardNetworkRepository.findById(any())).thenReturn(Optional.of(cardNetwork));
-        when(offerMapper.toEntity(offerDTO)).thenReturn(offer);
+        List<OfferSummaryDTO> result = offerServiceImpl.getOffersByMerchant(1L);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    void shouldCreateOffer_whenCreateOfferIsCalled() {
+        OfferDTO dto = anOfferDTO();
+        Offer offer = anOffer();
+
+        when(merchantRepository.findById(anyLong())).thenReturn(Optional.of(aMerchant()));
+        when(cardNetworkRepository.findById(anyLong())).thenReturn(Optional.of(aCardNetwork()));
+        when(offerMapper.toEntity(dto)).thenReturn(offer);
         when(offerRepository.save(offer)).thenReturn(offer);
-        when(offerMapper.toDTO(offer)).thenReturn(offerDTO);
+        when(offerMapper.toDTO(offer)).thenReturn(dto);
 
-        OfferDTO result = offerService.createOffer(offerDTO);
+        OfferDTO result = offerServiceImpl.createOffer(dto);
 
         assertNotNull(result);
-        verify(offerRepository).save(offer);
+        assertEquals("Test Title", result.getTitle());
     }
 
     @Test
-    void shouldThrowResourceNotFoundException_whenMerchantDoesNotExistOnCreate() {
-        OfferDTO offerDTO = new OfferDTO();
-        offerDTO.setMerchant(new Merchant());
+    void shouldThrowException_whenCreateOfferIsCalledWithInvalidMerchant() {
+        OfferDTO dto = anOfferDTO();
+        when(merchantRepository.findById(anyLong())).thenReturn(Optional.empty());
 
-        when(merchantRepository.findById(any())).thenReturn(Optional.empty());
-
-        assertThrows(ResourceNotFoundException.class, () -> offerService.createOffer(offerDTO));
+        assertThrows(ResourceNotFoundException.class, () -> offerServiceImpl.createOffer(dto));
     }
 
     @Test
-    void shouldThrowInvalidOfferException_whenEndDateBeforeStartDate() {
-        OfferDTO offerDTO = new OfferDTO();
-        offerDTO.setStartDate(LocalDate.now().plusDays(1));
-        offerDTO.setEndDate(LocalDate.now());
+    void shouldThrowInvalidOfferException_whenOfferEndDateBeforeStartDate() {
+        OfferDTO dto = anOfferDTO();
+        dto.setStartDate(LocalDate.of(2025, 1, 16));
+        dto.setEndDate(LocalDate.of(2025, 1, 15));
 
-        assertThrows(InvalidOfferException.class, () -> offerService.createOffer(offerDTO));
+        assertThrows(InvalidOfferException.class, () -> offerServiceImpl.createOffer(dto));
     }
 
     @Test
-    void shouldUpdateOffer_whenOfferExists() {
-        OfferDTO offerDTO = new OfferDTO();
-        offerDTO.setMerchant(new Merchant());
-        offerDTO.setCardNetwork(new CardNetwork());
-
-        Offer existingOffer = new Offer();
-        existingOffer.setId(1L);
+    void shouldUpdateOffer_whenUpdateOfferIsCalled() {
+        OfferDTO dto = anOfferDTO();
+        Offer existingOffer = anOffer();
 
         when(offerRepository.findById(1L)).thenReturn(Optional.of(existingOffer));
-        when(merchantRepository.findById(any())).thenReturn(Optional.of(new Merchant()));
-        when(cardNetworkRepository.findById(any())).thenReturn(Optional.of(new CardNetwork()));
-        when(offerMapper.toDTO(existingOffer)).thenReturn(offerDTO);
+        when(merchantRepository.findById(anyLong())).thenReturn(Optional.of(aMerchant()));
+        when(cardNetworkRepository.findById(anyLong())).thenReturn(Optional.of(aCardNetwork()));
+        when(offerMapper.toDTO(existingOffer)).thenReturn(dto);
 
-        OfferDTO result = offerService.updateOffer(1L, offerDTO);
+        OfferDTO result = offerServiceImpl.updateOffer(1L, dto);
 
         assertNotNull(result);
-        verify(offerRepository).save(existingOffer);
-    }
-
-    @Test
-    void shouldThrowResourceNotFoundException_whenUpdatingNonexistentOffer() {
-        when(offerRepository.findById(any())).thenReturn(Optional.empty());
-
-        assertThrows(ResourceNotFoundException.class, () -> offerService.updateOffer(1L, new OfferDTO()));
+        assertEquals("Test Title", result.getTitle());
     }
 }

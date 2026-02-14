@@ -1,7 +1,19 @@
 package com.cardoffers.oms.service;
 
-import static org.mockito.Mockito.*;
+import org.mockito.Mockito;
+import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,86 +24,107 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.cardoffers.oms.model.dto.EligibleOfferResponseDTO;
 import com.cardoffers.oms.model.dto.OfferDTO;
 
-import java.util.Collections;
-import java.util.List;
-
 @ExtendWith(MockitoExtension.class)
 class OfferEligibilityServiceTest {
 
-    @Mock
-    private OfferEligibilityService offerEligibilityService;
-
     @InjectMocks
-    private OfferEligibilityServiceImpl offerEligibilityServiceImpl;
+    OfferEligibilityService offerEligibilityService;
+
+    @Mock
+    private OfferRepository offerRepository;  // Assuming there's an OfferRepository interface for database operations
+
+    private static EligibleOfferResponseDTO anEligibleOfferResponseDTO() {
+        EligibleOfferResponseDTO entity = new EligibleOfferResponseDTO();
+        return entity;
+    }
+
+    private static OfferDTO anOfferDTO() {
+        OfferDTO entity = new OfferDTO();
+        entity.setTitle("Test Title");
+        entity.setDescription("Test description");
+        entity.setOfferType("DEFAULT");
+        entity.setDiscountPercentage(1);
+        entity.setCashbackAmount(new java.math.BigDecimal("100.00"));
+        entity.setMinimumPurchaseAmount(new java.math.BigDecimal("100.00"));
+        entity.setStartDate(java.time.LocalDate.of(2025, 1, 15));
+        entity.setEndDate(java.time.LocalDate.of(2025, 1, 15));
+        entity.setTermsAndConditions("test-value");
+        entity.setMerchant(null);  // Set MerchantDTO as needed
+        entity.setCardNetwork(null);  // Set CardNetworkDTO as needed
+        entity.setSource("test-value");
+        entity.setMaxRedemptions(1);
+        entity.setCurrentRedemptions(1);
+        entity.setActive(true);
+        return entity;
+    }
 
     @Test
     void shouldReturnEligibleOffers_whenCardholderExists() {
         Long cardholderId = 1L;
-        EligibleOfferResponseDTO expectedResponse = new EligibleOfferResponseDTO();
+        OfferDTO offer = anOfferDTO();
+        EligibleOfferResponseDTO expectedResponse = anEligibleOfferResponseDTO();
+        expectedResponse.setCardholderId(cardholderId);
+        expectedResponse.setEligibleOffers(Collections.singletonList(offer));
+        expectedResponse.setTotalOffers(1);
 
-        when(offerEligibilityService.getEligibleOffersForCardholder(cardholderId)).thenReturn(expectedResponse);
+        when(offerRepository.findEligibleOffersByCardholderId(cardholderId)).thenReturn(expectedResponse);
 
-        EligibleOfferResponseDTO actualResponse = offerEligibilityServiceImpl.getEligibleOffersForCardholder(cardholderId);
+        EligibleOfferResponseDTO actualResponse = offerEligibilityService.getEligibleOffersForCardholder(cardholderId);
 
         assertNotNull(actualResponse);
-        assertEquals(expectedResponse, actualResponse);
+        assertEquals(expectedResponse.getTotalOffers(), actualResponse.getTotalOffers());
+        assertEquals(expectedResponse.getEligibleOffers().size(), actualResponse.getEligibleOffers().size());
     }
 
     @Test
-    void shouldReturnFilteredOffersByCategory_whenValidInputsProvided() {
+    void shouldReturnEmptyList_whenNoOffersFoundByCategory() {
         Long cardholderId = 1L;
-        String category = "Electronics";
-        OfferDTO offerDTO = new OfferDTO();
-        List<OfferDTO> expectedOffers = List.of(offerDTO);
+        String category = "Non-existent Category";
 
-        when(offerEligibilityService.filterOffersByCategory(cardholderId, category)).thenReturn(expectedOffers);
+        when(offerRepository.findOffersByCategory(cardholderId, category)).thenReturn(Collections.emptyList());
 
-        List<OfferDTO> actualOffers = offerEligibilityServiceImpl.filterOffersByCategory(cardholderId, category);
+        List<OfferDTO> offers = offerEligibilityService.filterOffersByCategory(cardholderId, category);
 
-        assertNotNull(actualOffers);
-        assertEquals(1, actualOffers.size());
-        assertEquals(expectedOffers, actualOffers);
+        assertNotNull(offers);
+        assertTrue(offers.isEmpty());
     }
 
     @Test
-    void shouldReturnFilteredOffersByOfferType_whenValidInputsProvided() {
+    void shouldReturnFilteredOffers_whenOffersMatchOfferType() {
         Long cardholderId = 1L;
-        String offerType = "Cashback";
-        OfferDTO offerDTO = new OfferDTO();
-        List<OfferDTO> expectedOffers = List.of(offerDTO);
+        String offerType = "Discount";
 
-        when(offerEligibilityService.filterOffersByOfferType(cardholderId, offerType)).thenReturn(expectedOffers);
+        OfferDTO offer = anOfferDTO();
+        offer.setOfferType(offerType);
+        when(offerRepository.findOffersByOfferType(cardholderId, offerType)).thenReturn(Collections.singletonList(offer));
 
-        List<OfferDTO> actualOffers = offerEligibilityServiceImpl.filterOffersByOfferType(cardholderId, offerType);
+        List<OfferDTO> offers = offerEligibilityService.filterOffersByOfferType(cardholderId, offerType);
 
-        assertNotNull(actualOffers);
-        assertEquals(1, actualOffers.size());
-        assertEquals(expectedOffers, actualOffers);
+        assertNotNull(offers);
+        assertEquals(1, offers.size());
+        assertEquals(offerType, offers.get(0).getOfferType());
     }
 
     @Test
-    void shouldReturnEmptyList_whenNoOffersAvailableForCategory() {
+    void shouldHandleNullCardholderId_whenGettingEligibleOffers() {
+        Long cardholderId = null;
+
+        assertThrows(IllegalArgumentException.class, () -> {
+            offerEligibilityService.getEligibleOffersForCardholder(cardholderId);
+        });
+    }
+
+    @Test
+    void shouldReturnList_whenOffersExistByCategory() {
         Long cardholderId = 1L;
-        String category = "NonExistentCategory";
+        String category = "Special Offers";
+        OfferDTO offer = anOfferDTO();
+        when(offerRepository.findOffersByCategory(cardholderId, category)).thenReturn(Arrays.asList(offer));
 
-        when(offerEligibilityService.filterOffersByCategory(cardholderId, category)).thenReturn(Collections.emptyList());
+        List<OfferDTO> offers = offerEligibilityService.filterOffersByCategory(cardholderId, category);
 
-        List<OfferDTO> actualOffers = offerEligibilityServiceImpl.filterOffersByCategory(cardholderId, category);
-
-        assertNotNull(actualOffers);
-        assertTrue(actualOffers.isEmpty());
-    }
-
-    @Test
-    void shouldThrowException_whenCardholderNotFound() {
-        Long cardholderId = 999L;
-
-        when(offerEligibilityService.getEligibleOffersForCardholder(cardholderId)).thenThrow(new IllegalArgumentException("Cardholder not found"));
-
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
-            offerEligibilityServiceImpl.getEligibleOffersForCardholder(cardholderId)
-        );
-
-        assertEquals("Cardholder not found", exception.getMessage());
+        assertNotNull(offers);
+        assertFalse(offers.isEmpty());
+        assertEquals(1, offers.size());
     }
 }
