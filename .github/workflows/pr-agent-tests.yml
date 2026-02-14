@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "30"
+  PR_AGENT_TEMPLATE_VERSION: "31"
 
 jobs:
   run-tests:
@@ -295,10 +295,12 @@ jobs:
             # --- Compile-check-and-prune: remove test files that fail compilation ---
             # Uses Python to reliably parse javac error output and delete uncompilable test files.
             python3 <<'PRUNE_PYEOF' || true
-          import subprocess, re, os, sys
+          import subprocess, re, os, sys, json
           NL = chr(10)
           MAX_ATTEMPTS = 3
           test_dir = 'src/test/java'
+          compile_errors = []
+          pruned_files = []
           if not os.path.isdir(test_dir):
               print('No test directory, skipping compile check')
               sys.exit(0)
@@ -312,6 +314,7 @@ jobs:
                   print('Compilation succeeded')
                   break
               output = result.stdout + NL + result.stderr
+              compile_errors.append(output[-4000:])
               paths = set()
               for line in output.split(NL):
                   m = re.search(r'(/\S+\.java):\[', line)
@@ -325,6 +328,7 @@ jobs:
                   break
               for f in test_files:
                   print('Removing uncompilable test: ' + f)
+                  pruned_files.append(os.path.basename(f))
                   os.remove(f)
               remaining = 0
               for root, dirs, files in os.walk(test_dir):
@@ -333,6 +337,15 @@ jobs:
                   print('All test files removed - no compilable tests')
                   break
               print(str(remaining) + ' test file(s) remaining, retrying...')
+          # Save compile errors for callback (Phase 2 — self-heal needs these)
+          if compile_errors or pruned_files:
+              report = {'pruned_files': pruned_files, 'compile_output': NL.join(compile_errors)[-8000:]}
+              with open('pr-agent-artifacts/compile-errors.json', 'w') as cf:
+                  json.dump(report, cf)
+              with open('pr-agent-artifacts/compile-errors.txt', 'w') as cf:
+                  if pruned_files:
+                      cf.write('Pruned ' + str(len(pruned_files)) + ' uncompilable test files: ' + ', '.join(pruned_files) + NL)
+                  cf.write(NL.join(compile_errors)[-8000:])
           PRUNE_PYEOF
             # Run tests — capture exit code so coverage + surefire logs are collected even on failure
             MVN_RC=0
@@ -439,6 +452,13 @@ jobs:
                   error_log = ef.read().strip()[:8000]
           except Exception:
               pass
+          # Fallback: compile errors (when all tests pruned, no surefire reports exist)
+          if not error_log:
+              try:
+                  with open('pr-agent-artifacts/compile-errors.txt') as cf:
+                      error_log = cf.read().strip()[:8000]
+              except Exception:
+                  pass
           # Parse surefire XML reports for structured failure data
           test_failures = []
           surefire_dir = 'pr-agent-artifacts/surefire-reports'
