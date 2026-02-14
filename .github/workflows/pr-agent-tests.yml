@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "29"
+  PR_AGENT_TEMPLATE_VERSION: "30"
 
 jobs:
   run-tests:
@@ -432,6 +432,36 @@ jobs:
                   cov = json.load(cf)
           except Exception:
               pass
+          # Load surefire error summary for self-heal (Phase 2/4)
+          error_log = ''
+          try:
+              with open('pr-agent-artifacts/surefire-errors.txt') as ef:
+                  error_log = ef.read().strip()[:8000]
+          except Exception:
+              pass
+          # Parse surefire XML reports for structured failure data
+          test_failures = []
+          surefire_dir = 'pr-agent-artifacts/surefire-reports'
+          try:
+              import glob
+              for xml_path in sorted(glob.glob(surefire_dir + '/TEST-*.xml'))[:20]:
+                  import xml.etree.ElementTree as ET
+                  tree = ET.parse(xml_path)
+                  root = tree.getroot()
+                  suite_name = root.get('name', '')
+                  for tc in root.findall('.//testcase'):
+                      failure = tc.find('failure')
+                      error = tc.find('error')
+                      elem = failure if failure is not None else error
+                      if elem is not None:
+                          test_failures.append({
+                              'class': tc.get('classname', suite_name),
+                              'method': tc.get('name', ''),
+                              'type': elem.get('type', ''),
+                              'message': (elem.get('message', '') or '')[:500],
+                          })
+          except Exception:
+              pass
           body = json.dumps({
               "agent_run_id": os.environ.get('RUN_ID', ''),
               "pr_number": os.environ.get('PR_NUM', ''),
@@ -442,6 +472,8 @@ jobs:
               "artifact_object_key": os.environ.get('ART_OBJ_KEY', ''),
               "detected_stack": ds,
               "coverage": cov,
+              "error_log": error_log,
+              "test_failures": test_failures[:50],
           })
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f'body={body}\n')
