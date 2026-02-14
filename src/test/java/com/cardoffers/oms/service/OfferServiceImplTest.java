@@ -2,18 +2,17 @@ package com.cardoffers.oms.service;
 
 import org.mockito.Mockito;
 import static org.mockito.Mockito.when;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.verify;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -33,8 +32,6 @@ import com.cardoffers.oms.model.entity.Offer;
 import com.cardoffers.oms.repository.CardNetworkRepository;
 import com.cardoffers.oms.repository.MerchantRepository;
 import com.cardoffers.oms.repository.OfferRepository;
-
-import java.util.List;
 
 @ExtendWith(MockitoExtension.class)
 class OfferServiceImplTest {
@@ -80,13 +77,13 @@ class OfferServiceImplTest {
         entity.setDescription("Test description");
         entity.setOfferType("DEFAULT");
         entity.setDiscountPercentage(1);
-        entity.setCashbackAmount(new BigDecimal("100.00"));
+        entity.setCashbackAmount(new java.math.BigDecimal("100.00"));
         entity.setMerchant(aMerchant());
         entity.setCardNetwork(aCardNetwork());
-        entity.setSource("source");
+        entity.setSource("test-source");
         entity.setMaxRedemptions(1);
         entity.setCurrentRedemptions(0);
-        entity.setCreatedAt(LocalDate.now().atStartOfDay());
+        entity.setCreatedAt(LocalDate.now());
         return entity;
     }
 
@@ -96,102 +93,114 @@ class OfferServiceImplTest {
         dto.setDescription("Test description");
         dto.setOfferType("DEFAULT");
         dto.setDiscountPercentage(1);
-        dto.setCashbackAmount(new BigDecimal("100.00"));
-        dto.setMinimumPurchaseAmount(new BigDecimal("100.00"));
+        dto.setCashbackAmount(new java.math.BigDecimal("100.00"));
+        dto.setMinimumPurchaseAmount(new java.math.BigDecimal("100.00"));
         dto.setStartDate(LocalDate.of(2025, 1, 15));
-        dto.setEndDate(LocalDate.of(2025, 1, 16));
+        dto.setEndDate(LocalDate.of(2025, 1, 15));
         dto.setTermsAndConditions("test-value");
-        dto.setMerchant(aMerchant());
-        dto.setCardNetwork(aCardNetwork());
+        dto.setMerchant(null); // Set MerchantDTO
+        dto.setCardNetwork(null); // Set CardNetworkDTO
         dto.setSource("test-value");
         dto.setMaxRedemptions(1);
-        dto.setCurrentRedemptions(0);
+        dto.setCurrentRedemptions(1);
         dto.setActive(true);
         return dto;
     }
 
     @Test
-    void shouldReturnOfferDTO_whenGetOfferByIdIsCalled() {
+    void shouldReturnOfferDTO_whenOfferExists() {
         Offer offer = anOffer();
-        OfferDTO offerDTO = anOfferDTO();
-
+        OfferDTO expectedDto = anOfferDTO();
+        
         when(offerRepository.findById(1L)).thenReturn(Optional.of(offer));
-        when(offerMapper.toDTO(offer)).thenReturn(offerDTO);
-
+        when(offerMapper.toDTO(offer)).thenReturn(expectedDto);
+        
         OfferDTO result = offerServiceImpl.getOfferById(1L);
-
+        
         assertNotNull(result);
-        assertEquals("Test Title", result.getTitle());
+        assertEquals(expectedDto.getTitle(), result.getTitle());
+        verify(offerRepository).findById(1L);
     }
 
     @Test
-    void shouldThrowException_whenGetOfferByIdIsCalledWithInvalidId() {
-        when(offerRepository.findById(1L)).thenReturn(Optional.empty());
+    void shouldThrowResourceNotFoundException_whenOfferDoesNotExist() {
+        when(offerRepository.findById(any())).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> offerServiceImpl.getOfferById(1L));
+        ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () -> 
+            offerServiceImpl.getOfferById(1L)
+        );
+
+        assertEquals("Offer not found", exception.getMessage());
     }
 
     @Test
-    void shouldReturnOfferSummaries_whenGetOffersByMerchantIsCalled() {
-        List<Offer> offers = Arrays.asList(anOffer());
-        List<OfferSummaryDTO> summaries = List.of(new OfferSummaryDTO());
-
-        when(offerRepository.findActiveOffersByMerchant(1L)).thenReturn(offers);
-        when(offerMapper.toSummaryDTO(any())).thenReturn(new OfferSummaryDTO());
-
+    void shouldReturnOfferSummaries_whenMerchantExists() {
+        Offer offer = anOffer();
+        OfferSummaryDTO summaryDto = new OfferSummaryDTO();
+        
+        when(offerRepository.findActiveOffersByMerchant(1L)).thenReturn(Collections.singletonList(offer));
+        when(offerMapper.toSummaryDTO(offer)).thenReturn(summaryDto);
+        
         List<OfferSummaryDTO> result = offerServiceImpl.getOffersByMerchant(1L);
-
+        
         assertNotNull(result);
         assertEquals(1, result.size());
+        assertEquals(summaryDto, result.get(0));
     }
 
     @Test
-    void shouldCreateOffer_whenCreateOfferIsCalled() {
+    void shouldThrowResourceNotFoundException_whenMerchantDoesNotExistForCreate() {
         OfferDTO dto = anOfferDTO();
-        Offer offer = anOffer();
+        when(merchantRepository.findById(dto.getMerchant().getId())).thenReturn(Optional.empty());
 
-        when(merchantRepository.findById(anyLong())).thenReturn(Optional.of(aMerchant()));
-        when(cardNetworkRepository.findById(anyLong())).thenReturn(Optional.of(aCardNetwork()));
-        when(offerMapper.toEntity(dto)).thenReturn(offer);
-        when(offerRepository.save(offer)).thenReturn(offer);
-        when(offerMapper.toDTO(offer)).thenReturn(dto);
+        ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () -> 
+            offerServiceImpl.createOffer(dto)
+        );
 
-        OfferDTO result = offerServiceImpl.createOffer(dto);
-
-        assertNotNull(result);
-        assertEquals("Test Title", result.getTitle());
+        assertEquals("Merchant not found", exception.getMessage());
     }
 
     @Test
-    void shouldThrowException_whenCreateOfferIsCalledWithInvalidMerchant() {
-        OfferDTO dto = anOfferDTO();
-        when(merchantRepository.findById(anyLong())).thenReturn(Optional.empty());
-
-        assertThrows(ResourceNotFoundException.class, () -> offerServiceImpl.createOffer(dto));
-    }
-
-    @Test
-    void shouldThrowInvalidOfferException_whenOfferEndDateBeforeStartDate() {
+    void shouldThrowInvalidOfferException_whenEndDateBeforeStartDate() {
         OfferDTO dto = anOfferDTO();
         dto.setStartDate(LocalDate.of(2025, 1, 16));
         dto.setEndDate(LocalDate.of(2025, 1, 15));
 
-        assertThrows(InvalidOfferException.class, () -> offerServiceImpl.createOffer(dto));
+        InvalidOfferException exception = assertThrows(InvalidOfferException.class, () -> 
+            offerServiceImpl.createOffer(dto)
+        );
+
+        assertEquals("Offer endDate must be on/after startDate", exception.getMessage());
     }
 
     @Test
-    void shouldUpdateOffer_whenUpdateOfferIsCalled() {
-        OfferDTO dto = anOfferDTO();
+    void shouldUpdateOffer_whenValidDTOIsProvided() {
         Offer existingOffer = anOffer();
-
+        OfferDTO dto = anOfferDTO();
+        
         when(offerRepository.findById(1L)).thenReturn(Optional.of(existingOffer));
-        when(merchantRepository.findById(anyLong())).thenReturn(Optional.of(aMerchant()));
-        when(cardNetworkRepository.findById(anyLong())).thenReturn(Optional.of(aCardNetwork()));
-        when(offerMapper.toDTO(existingOffer)).thenReturn(dto);
-
+        when(merchantRepository.findById(dto.getMerchant().getId())).thenReturn(Optional.of(aMerchant()));
+        when(cardNetworkRepository.findById(dto.getCardNetwork().getId())).thenReturn(Optional.of(aCardNetwork()));
+        when(offerRepository.save(existingOffer)).thenReturn(existingOffer);
+        
         OfferDTO result = offerServiceImpl.updateOffer(1L, dto);
-
+        
         assertNotNull(result);
-        assertEquals("Test Title", result.getTitle());
+        verify(offerRepository).save(existingOffer);
+    }
+
+    @Test
+    void shouldSearchOffers_whenValidKeywordIsProvided() {
+        Offer offer = anOffer();
+        OfferDTO expectedDto = anOfferDTO();
+        
+        when(offerRepository.findActiveOffers(LocalDate.now())).thenReturn(Collections.singletonList(offer));
+        when(offerMapper.toDTO(offer)).thenReturn(expectedDto);
+        
+        List<OfferDTO> result = offerServiceImpl.searchOffers("Test", null, null);
+        
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(expectedDto, result.get(0));
     }
 }

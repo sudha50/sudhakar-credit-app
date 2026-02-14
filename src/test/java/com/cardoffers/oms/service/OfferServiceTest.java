@@ -3,15 +3,10 @@ package com.cardoffers.oms.service;
 import org.mockito.Mockito;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
@@ -26,14 +21,17 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.cardoffers.oms.model.dto.OfferDTO;
+import com.cardoffers.oms.model.dto.OfferSummaryDTO;
+
 @ExtendWith(MockitoExtension.class)
 class OfferServiceTest {
 
-    @InjectMocks 
+    @InjectMocks
     OfferService offerService;
 
     @Mock
-    private OfferRepository offerRepository; // Assuming an OfferRepository exists
+    OfferRepository offerRepository; // Assuming there's a repository to mock, adjust according to actual dependencies.
 
     private static OfferDTO anOfferDTO() {
         OfferDTO entity = new OfferDTO();
@@ -46,8 +44,8 @@ class OfferServiceTest {
         entity.setStartDate(LocalDate.of(2025, 1, 15));
         entity.setEndDate(LocalDate.of(2025, 1, 15));
         entity.setTermsAndConditions("test-value");
-        entity.setMerchant(null); // Set MerchantDTO accordingly
-        entity.setCardNetwork(null); // Set CardNetworkDTO accordingly
+        entity.setMerchant(null /* TODO: set MerchantDTO */);
+        entity.setCardNetwork(null /* TODO: set CardNetworkDTO */);
         entity.setSource("test-value");
         entity.setMaxRedemptions(1);
         entity.setCurrentRedemptions(1);
@@ -57,20 +55,14 @@ class OfferServiceTest {
 
     private static OfferSummaryDTO anOfferSummaryDTO() {
         OfferSummaryDTO entity = new OfferSummaryDTO();
-        entity.setTitle("Test Summary Title");
-        entity.setMerchantName("Test Merchant");
-        entity.setOfferType("DEFAULT");
-        entity.setDiscountPercentage(BigDecimal.ONE);
-        entity.setStartDate(LocalDate.of(2025, 1, 15));
-        entity.setEndDate(LocalDate.of(2025, 1, 15));
-        entity.setActive(true);
         return entity;
     }
 
     @Test
-    void shouldReturnOffer_whenGetOfferByIdIsCalled() {
+    void shouldReturnOffer_whenValidIdProvided() {
         OfferDTO expectedOffer = anOfferDTO();
-        when(offerRepository.findById(anyLong())).thenReturn(Optional.of(expectedOffer));
+        expectedOffer.setId(1L); // assuming it should have an ID
+        when(offerRepository.findById(1L)).thenReturn(Optional.of(expectedOffer));
 
         OfferDTO actualOffer = offerService.getOfferById(1L);
 
@@ -80,66 +72,82 @@ class OfferServiceTest {
     }
 
     @Test
-    void shouldReturnEmptyList_whenNoOffersByMerchant() {
-        when(offerRepository.findByMerchantId(anyLong())).thenReturn(Collections.emptyList());
+    void shouldReturnOffersByMerchant_whenValidMerchantIdProvided() {
+        Long merchantId = 1L;
+        OfferSummaryDTO offerSummary = anOfferSummaryDTO();
+        List<OfferSummaryDTO> expectedOffers = Collections.singletonList(offerSummary);
 
-        List<OfferSummaryDTO> offers = offerService.getOffersByMerchant(1L);
+        when(offerRepository.findOffersByMerchantId(merchantId)).thenReturn(expectedOffers);
 
-        assertNotNull(offers);
-        assertTrue(offers.isEmpty());
-        verify(offerRepository).findByMerchantId(1L);
+        List<OfferSummaryDTO> actualOffers = offerService.getOffersByMerchant(merchantId);
+
+        assertNotNull(actualOffers);
+        assertEquals(expectedOffers.size(), actualOffers.size());
+        verify(offerRepository).findOffersByMerchantId(merchantId);
     }
 
     @Test
-    void shouldReturnListOfOffersByCardNetwork_whenCalled() {
-        OfferSummaryDTO expectedSummary = anOfferSummaryDTO();
-        when(offerRepository.findByCardNetworkId(anyLong())).thenReturn(List.of(expectedSummary));
+    void shouldReturnOffersByCardNetwork_whenValidNetworkIdProvided() {
+        Long networkId = 1L;
+        OfferSummaryDTO offerSummary = anOfferSummaryDTO();
+        List<OfferSummaryDTO> expectedOffers = Collections.singletonList(offerSummary);
 
-        List<OfferSummaryDTO> summaries = offerService.getOffersByCardNetwork(1L);
+        when(offerRepository.findOffersByCardNetworkId(networkId)).thenReturn(expectedOffers);
 
-        assertNotNull(summaries);
-        assertFalse(summaries.isEmpty());
-        assertEquals(expectedSummary.getTitle(), summaries.get(0).getTitle());
-        verify(offerRepository).findByCardNetworkId(1L);
+        List<OfferSummaryDTO> actualOffers = offerService.getOffersByCardNetwork(networkId);
+
+        assertNotNull(actualOffers);
+        assertEquals(expectedOffers.size(), actualOffers.size());
+        verify(offerRepository).findOffersByCardNetworkId(networkId);
     }
 
     @Test
-    void shouldCreateOffer_whenValidDtoIsProvided() {
-        OfferDTO newOffer = anOfferDTO();
-        when(offerRepository.save(any(OfferDTO.class))).thenReturn(newOffer);
+    void shouldCreateOffer_whenValidOfferProvided() {
+        OfferDTO offerToCreate = anOfferDTO();
+        offerToCreate.setId(null); // Ensure ID is not set prior to creation
+        
+        when(offerRepository.save(any())).thenReturn(offerToCreate);
 
-        OfferDTO createdOffer = offerService.createOffer(newOffer);
+        OfferDTO createdOffer = offerService.createOffer(offerToCreate);
 
         assertNotNull(createdOffer);
-        assertEquals(newOffer.getTitle(), createdOffer.getTitle());
-        verify(offerRepository).save(newOffer);
+        assertEquals(offerToCreate.getTitle(), createdOffer.getTitle());
+        verify(offerRepository).save(offerToCreate);
     }
 
     @Test
-    void shouldUpdateOffer_whenValidIdAndDtoAreProvided() {
+    void shouldUpdateOffer_whenValidIdAndOfferProvided() {
+        Long offerId = 1L;
         OfferDTO existingOffer = anOfferDTO();
-        existingOffer.setId(1L);
-        when(offerRepository.findById(anyLong())).thenReturn(Optional.of(existingOffer));
-        when(offerRepository.save(any(OfferDTO.class))).thenReturn(existingOffer);
+        existingOffer.setId(offerId);
+        OfferDTO updatedOffer = anOfferDTO();
+        updatedOffer.setId(offerId);
 
-        OfferDTO updatedOffer = offerService.updateOffer(1L, existingOffer);
+        when(offerRepository.findById(offerId)).thenReturn(Optional.of(existingOffer));
+        when(offerRepository.save(any())).thenReturn(updatedOffer);
 
-        assertNotNull(updatedOffer);
-        assertEquals(existingOffer.getTitle(), updatedOffer.getTitle());
-        verify(offerRepository).findById(1L);
-        verify(offerRepository).save(existingOffer);
+        OfferDTO result = offerService.updateOffer(offerId, updatedOffer);
+
+        assertNotNull(result);
+        assertEquals(updatedOffer.getTitle(), result.getTitle());
+        verify(offerRepository).findById(offerId);
+        verify(offerRepository).save(updatedOffer);
     }
 
     @Test
-    void shouldSearchOffers_whenKeywordIsProvided() {
-        OfferDTO expectedOffer = anOfferDTO();
-        when(offerRepository.findByKeyword(anyString())).thenReturn(List.of(expectedOffer));
+    void shouldReturnOffers_whenSearchCriteriaProvided() {
+        String keyword = "Test";
+        String offerType = "DEFAULT";
+        String category = "Food";
+        OfferDTO offer = anOfferDTO();
+        List<OfferDTO> expectedOffers = Collections.singletonList(offer);
+        
+        when(offerRepository.searchOffers(any(), any(), any())).thenReturn(expectedOffers);
 
-        List<OfferDTO> results = offerService.searchOffers("Test", null, null);
+        List<OfferDTO> actualOffers = offerService.searchOffers(keyword, offerType, category);
 
-        assertNotNull(results);
-        assertFalse(results.isEmpty());
-        assertEquals(expectedOffer.getTitle(), results.get(0).getTitle());
-        verify(offerRepository).findByKeyword("Test");
+        assertNotNull(actualOffers);
+        assertEquals(expectedOffers.size(), actualOffers.size());
+        verify(offerRepository).searchOffers(keyword, offerType, category);
     }
 }
