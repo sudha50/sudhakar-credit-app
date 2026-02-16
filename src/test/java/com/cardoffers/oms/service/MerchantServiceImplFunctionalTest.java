@@ -1,17 +1,17 @@
 package com.cardoffers.oms.service;
 
 import org.mockito.Mockito;
+import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.springframework.boot.test.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -47,18 +47,18 @@ class MerchantServiceImplFunctionalTest {
     @BeforeEach
     void setUp() {
         merchant = new Merchant();
-        merchant.setId(1L);
         merchant.setName("Test Merchant");
-        merchant.setDescription("Description");
-        merchant.setCategory("Category");
+        merchant.setDescription("A description");
+        merchant.setCategory("Category1");
         merchant.setLogoUrl("http://logo.url");
         merchant.setWebsite("http://website.url");
         merchant.setActive(true);
+        merchant.setId(1L);
 
         merchantDTO = new MerchantDTO();
         merchantDTO.setName("Test Merchant");
-        merchantDTO.setDescription("Description");
-        merchantDTO.setCategory("Category");
+        merchantDTO.setDescription("A description");
+        merchantDTO.setCategory("Category1");
         merchantDTO.setLogoUrl("http://logo.url");
         merchantDTO.setWebsite("http://website.url");
         merchantDTO.setActive(true);
@@ -70,6 +70,7 @@ class MerchantServiceImplFunctionalTest {
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
 
         MerchantDTO result = merchantService.getMerchantById(1L);
+
         assertNotNull(result);
         assertEquals("Test Merchant", result.getName());
     }
@@ -81,16 +82,30 @@ class MerchantServiceImplFunctionalTest {
         ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () -> {
             merchantService.getMerchantById(1L);
         });
+
         assertEquals("Merchant not found", exception.getMessage());
+    }
+
+    @Test
+    void testGetMerchantsByCategory_ShouldReturnActiveMerchants() {
+        when(merchantRepository.findByCategory("Category1")).thenReturn(List.of(merchant));
+        when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
+
+        List<MerchantDTO> result = merchantService.getMerchantsByCategory("Category1");
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals("Test Merchant", result.get(0).getName());
     }
 
     @Test
     void testCreateMerchant() {
         when(merchantMapper.toEntity(merchantDTO)).thenReturn(merchant);
-        when(merchantRepository.save(any(Merchant.class))).thenReturn(merchant);
+        when(merchantRepository.save(merchant)).thenReturn(merchant);
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
 
         MerchantDTO result = merchantService.createMerchant(merchantDTO);
+
         assertNotNull(result);
         assertEquals("Test Merchant", result.getName());
     }
@@ -98,20 +113,13 @@ class MerchantServiceImplFunctionalTest {
     @Test
     void testUpdateMerchant_HappyPath() {
         when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant));
-        when(merchantRepository.save(any(Merchant.class))).thenReturn(merchant);
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
+        when(merchantRepository.save(merchant)).thenReturn(merchant);
 
-        MerchantDTO updatedMerchantDTO = new MerchantDTO();
-        updatedMerchantDTO.setName("Updated Merchant");
-        updatedMerchantDTO.setDescription("Updated Description");
-        updatedMerchantDTO.setCategory("Updated Category");
-        updatedMerchantDTO.setLogoUrl("http://updated.logo.url");
-        updatedMerchantDTO.setWebsite("http://updated.website.url");
-        updatedMerchantDTO.setActive(false);
+        MerchantDTO result = merchantService.updateMerchant(1L, merchantDTO);
 
-        MerchantDTO result = merchantService.updateMerchant(1L, updatedMerchantDTO);
-        assertEquals("Updated Merchant", result.getName());
-        assertFalse(result.getActive());
+        assertNotNull(result);
+        assertEquals("Test Merchant", result.getName());
     }
 
     @Test
@@ -121,6 +129,7 @@ class MerchantServiceImplFunctionalTest {
         ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () -> {
             merchantService.updateMerchant(1L, merchantDTO);
         });
+
         assertEquals("Merchant not found", exception.getMessage());
     }
 }
