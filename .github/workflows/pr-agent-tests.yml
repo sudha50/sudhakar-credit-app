@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "38"
+  PR_AGENT_TEMPLATE_VERSION: "40"
 
 jobs:
   run-tests:
@@ -488,16 +488,25 @@ jobs:
                       error_log = cf.read().strip()[:8000]
               except Exception:
                   pass
-          # Parse surefire XML reports for structured failure data
+          # Parse surefire XML reports for structured failure data + test type counts
           test_failures = []
+          test_type_counts = {'unit': 0, 'functional': 0, 'integration': 0}
           surefire_dir = 'pr-agent-artifacts/surefire-reports'
           try:
               import glob
-              for xml_path in sorted(glob.glob(surefire_dir + '/TEST-*.xml'))[:20]:
+              for xml_path in sorted(glob.glob(surefire_dir + '/TEST-*.xml'))[:50]:
                   import xml.etree.ElementTree as ET
                   tree = ET.parse(xml_path)
                   root = tree.getroot()
                   suite_name = root.get('name', '')
+                  tests_in_suite = int(root.get('tests', '0'))
+                  # Classify by class name suffix
+                  if suite_name.endswith('FunctionalTest'):
+                      test_type_counts['functional'] += tests_in_suite
+                  elif suite_name.endswith('IntegrationTest'):
+                      test_type_counts['integration'] += tests_in_suite
+                  else:
+                      test_type_counts['unit'] += tests_in_suite
                   for tc in root.findall('.//testcase'):
                       failure = tc.find('failure')
                       error = tc.find('error')
@@ -523,6 +532,7 @@ jobs:
               "coverage": cov,
               "error_log": error_log,
               "test_failures": test_failures[:50],
+              "test_type_counts": test_type_counts,
           })
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f'body={body}\n')
