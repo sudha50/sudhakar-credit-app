@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "40"
+  PR_AGENT_TEMPLATE_VERSION: "42"
 
 jobs:
   run-tests:
@@ -376,9 +376,28 @@ jobs:
                       cf.write('Pruned ' + str(len(pruned_files)) + ' uncompilable test files: ' + ', '.join(pruned_files) + NL)
                   cf.write(NL.join(compile_errors)[-8000:])
           PRUNE_PYEOF
-            # Run tests — capture exit code so coverage + surefire logs are collected even on failure
+            # Run tests per type — separate Maven phases for isolation
+            # Phase A: unit tests (*Test, excluding *FunctionalTest and *IntegrationTest)
             MVN_RC=0
-            mvn test || MVN_RC=$?
+            UNIT_RC=0
+            FUNC_RC=0
+            INT_RC=0
+            echo "=== Phase A: Unit tests ==="
+            mvn test -Dtest="!*FunctionalTest,!*IntegrationTest" -DfailIfNoTests=false || UNIT_RC=$?
+            # Phase B: functional tests (*FunctionalTest)
+            echo "=== Phase B: Functional tests ==="
+            mvn test -Dtest="*FunctionalTest" -DfailIfNoTests=false 2>/dev/null || FUNC_RC=$?
+            # Phase C: integration tests (*IntegrationTest)
+            echo "=== Phase C: Integration tests ==="
+            mvn test -Dtest="*IntegrationTest" -DfailIfNoTests=false 2>/dev/null || INT_RC=$?
+            # Overall exit code: fail if unit tests failed (primary)
+            if [ $UNIT_RC -ne 0 ]; then
+              MVN_RC=$UNIT_RC
+            elif [ $FUNC_RC -ne 0 ]; then
+              MVN_RC=$FUNC_RC
+            elif [ $INT_RC -ne 0 ]; then
+              MVN_RC=$INT_RC
+            fi
             # Capture surefire error summary for self-heal callback
             if [ -d target/surefire-reports ]; then
               grep -h -A2 'FAILURE\|ERROR' target/surefire-reports/*.txt 2>/dev/null | head -200 > pr-agent-artifacts/surefire-errors.txt || true
@@ -422,11 +441,181 @@ jobs:
               cp coverage/coverage-final.json pr-agent-artifacts/istanbul.json
             fi
           elif [ "$LANG" = "python" ]; then
-            python -m pip install -r requirements.txt || true
-            pytest --maxfail=1 --disable-warnings -q --cov --cov-report=xml || pytest -q || true
+            # --- Install dependencies ---
+            if [ -f requirements.txt ]; then
+              python3 -m pip install -r requirements.txt || true
+            fi
+            if [ -f pyproject.toml ]; then
+              python3 -m pip install -e '.[test]' 2>/dev/null || python3 -m pip install -e '.[dev]' 2>/dev/null || true
+            fi
+            python3 -m pip install pytest pytest-cov pytest-asyncio 2>/dev/null || true
+
+            # --- Django auto-detection ---
+            if [ -f manage.py ]; then
+              echo "Django project detected (manage.py found)"
+              python3 -m pip install pytest-django 2>/dev/null || true
+              # Auto-detect DJANGO_SETTINGS_MODULE if not already set
+              if [ -z "$DJANGO_SETTINGS_MODULE" ]; then
+                DJANGO_SETTINGS_MODULE=$(python3 -c "
+          import re, glob
+          for f in glob.glob('*/settings.py') + glob.glob('*/settings/*.py') + glob.glob('config/settings.py'):
+              with open(f) as fh:
+                  if 'INSTALLED_APPS' in fh.read():
+                      mod = f.replace('/', '.').replace('.py', '')
+                      print(mod)
+                      break
+          " 2>/dev/null || true)
+                if [ -n "$DJANGO_SETTINGS_MODULE" ]; then
+                  export DJANGO_SETTINGS_MODULE
+                  echo "Auto-detected DJANGO_SETTINGS_MODULE=$DJANGO_SETTINGS_MODULE"
+                fi
+              fi
+              # Create pytest.ini with django settings if not present
+              if [ -n "$DJANGO_SETTINGS_MODULE" ] && ! grep -q 'DJANGO_SETTINGS_MODULE' pytest.ini 2>/dev/null && ! grep -q 'DJANGO_SETTINGS_MODULE' pyproject.toml 2>/dev/null; then
+                echo "[pytest]" > pytest.ini
+                echo "DJANGO_SETTINGS_MODULE = $DJANGO_SETTINGS_MODULE" >> pytest.ini
+                echo "Created pytest.ini with DJANGO_SETTINGS_MODULE=$DJANGO_SETTINGS_MODULE"
+              fi
+              # Run migrations for test database
+              python3 manage.py migrate --run-syncdb --no-input 2>/dev/null || true
+            fi
+
+            # --- Syntax-check-and-prune: remove test files that fail py_compile ---
+            python3 <<'PYPRUNE_EOF' || true
+          import py_compile, glob, os, sys
+          NL = chr(10)
+          pruned = []
+          for tf in sorted(glob.glob('tests/**/test_*.py', recursive=True)):
+              try:
+                  py_compile.compile(tf, doraise=True)
+              except py_compile.PyCompileError as e:
+                  pruned.append(tf + ': ' + str(e)[:200])
+                  os.remove(tf)
+          if pruned:
+              print('PRUNED ' + str(len(pruned)) + ' test file(s) with syntax errors:')
+              for p in pruned:
+                  print('  - ' + p)
+              os.makedirs('pr-agent-artifacts', exist_ok=True)
+              with open('pr-agent-artifacts/compile-errors.txt', 'w') as f:
+                  f.write(NL.join(pruned))
+          PYPRUNE_EOF
+
+            # --- Run pytest per test type for isolation ---
+            PYTEST_RC=0
+            UNIT_RC=0
+            FUNC_RC=0
+            INT_RC=0
+
+            # Phase A: unit tests (tests/ excluding functional/ and integration/)
+            echo "=== Phase A: Unit tests ==="
+            python3 -m pytest \
+              --maxfail=5 \
+              --disable-warnings \
+              -q \
+              --cov \
+              --cov-report=xml:coverage.xml \
+              --junitxml=pr-agent-artifacts/pytest-unit.xml \
+              --ignore=tests/functional \
+              --ignore=tests/integration \
+              || UNIT_RC=$?
+
+            # Fallback: retry without coverage if first run failed on plugin issues
+            if [ $UNIT_RC -ne 0 ] && ! [ -f pr-agent-artifacts/pytest-unit.xml ]; then
+              python3 -m pytest -q --junitxml=pr-agent-artifacts/pytest-unit.xml --ignore=tests/functional --ignore=tests/integration || UNIT_RC=$?
+            fi
+
+            # Phase B: functional tests (tests/functional/)
+            if [ -d tests/functional ]; then
+              echo "=== Phase B: Functional tests ==="
+              python3 -m pytest \
+                tests/functional/ \
+                --maxfail=5 \
+                --disable-warnings \
+                -q \
+                --junitxml=pr-agent-artifacts/pytest-functional.xml \
+                2>/dev/null || FUNC_RC=$?
+            fi
+
+            # Phase C: integration tests (tests/integration/)
+            if [ -d tests/integration ]; then
+              echo "=== Phase C: Integration tests ==="
+              python3 -m pytest \
+                tests/integration/ \
+                --maxfail=5 \
+                --disable-warnings \
+                -q \
+                --junitxml=pr-agent-artifacts/pytest-integration.xml \
+                2>/dev/null || INT_RC=$?
+            fi
+
+            # Merge JUnit XMLs into single results file for backward compat
+            python3 <<'PYMERGE_EOF' || true
+          import os, shutil
+          primary = 'pr-agent-artifacts/pytest-unit.xml'
+          dest = 'pr-agent-artifacts/pytest-results.xml'
+          if os.path.isfile(primary):
+              shutil.copy2(primary, dest)
+          PYMERGE_EOF
+
+            # Overall exit code: fail if unit tests failed (primary)
+            if [ $UNIT_RC -ne 0 ]; then
+              PYTEST_RC=$UNIT_RC
+            elif [ $FUNC_RC -ne 0 ]; then
+              PYTEST_RC=$FUNC_RC
+            elif [ $INT_RC -ne 0 ]; then
+              PYTEST_RC=$INT_RC
+            fi
+
+            # --- Coverage summary → JSON (mirrors Java/JaCoCo flow) ---
             if [ -f coverage.xml ]; then
               cp coverage.xml pr-agent-artifacts/coverage.xml
+              python3 <<'PYCOV_EOF' || true
+          import xml.etree.ElementTree as ET, json, os
+          try:
+              tree = ET.parse('coverage.xml')
+              root = tree.getroot()
+              line_rate = float(root.get('line-rate', '0') or 0)
+              branch_rate = float(root.get('branch-rate', '0') or 0)
+              summary = {
+                  'line_coverage': round(line_rate * 100, 2),
+                  'branch_coverage': round(branch_rate * 100, 2),
+              }
+              os.makedirs('pr-agent-artifacts', exist_ok=True)
+              with open('pr-agent-artifacts/coverage-summary.json', 'w') as f:
+                  json.dump(summary, f)
+              print('Coverage: line=' + str(summary['line_coverage']) + '% branch=' + str(summary['branch_coverage']) + '%')
+          except Exception as e:
+              print('coverage parse error: ' + str(e))
+          PYCOV_EOF
             fi
+
+            # --- Capture pytest error output for self-heal ---
+            if [ -f pr-agent-artifacts/pytest-results.xml ]; then
+              python3 <<'PYERR_EOF' || true
+          import xml.etree.ElementTree as ET, os, json
+          NL = chr(10)
+          try:
+              tree = ET.parse('pr-agent-artifacts/pytest-results.xml')
+              root = tree.getroot()
+              errors = []
+              for tc in root.iter('testcase'):
+                  for tag in ('failure', 'error'):
+                      elem = tc.find(tag)
+                      if elem is not None:
+                          msg = (elem.get('message', '') or '')[:500]
+                          text = (elem.text or '')[:1000]
+                          errors.append(tc.get('classname', '') + '::' + tc.get('name', '') + NL + msg + NL + text)
+              if errors:
+                  os.makedirs('pr-agent-artifacts', exist_ok=True)
+                  with open('pr-agent-artifacts/pytest-errors.txt', 'w') as f:
+                      f.write((NL + '---' + NL).join(errors[:30]))
+          except Exception as e:
+              print('pytest XML parse error: ' + str(e))
+          PYERR_EOF
+            fi
+
+            # Propagate pytest exit code
+            exit $PYTEST_RC
           else
             echo "Unknown language '$LANG'" >&2
             exit 2
@@ -481,7 +670,14 @@ jobs:
                   error_log = ef.read().strip()[:8000]
           except Exception:
               pass
-          # Fallback: compile errors (when all tests pruned, no surefire reports exist)
+          # Load pytest error summary for Python self-heal
+          if not error_log:
+              try:
+                  with open('pr-agent-artifacts/pytest-errors.txt') as pf:
+                      error_log = pf.read().strip()[:8000]
+              except Exception:
+                  pass
+          # Fallback: compile errors (when all tests pruned, no surefire/pytest reports exist)
           if not error_log:
               try:
                   with open('pr-agent-artifacts/compile-errors.txt') as cf:
@@ -520,6 +716,65 @@ jobs:
                           })
           except Exception:
               pass
+          # Parse pytest JUnit XMLs for Python test type counts + failures
+          # Per-type XMLs (from isolated CI phases) are the primary source;
+          # fallback to single results file with classname-based heuristic.
+          _pytest_type_files = {
+              'unit': 'pr-agent-artifacts/pytest-unit.xml',
+              'functional': 'pr-agent-artifacts/pytest-functional.xml',
+              'integration': 'pr-agent-artifacts/pytest-integration.xml',
+          }
+          _found_typed_xml = False
+          try:
+              import xml.etree.ElementTree as ET
+              for _ttype, _xml_path in _pytest_type_files.items():
+                  if not os.path.isfile(_xml_path):
+                      continue
+                  _found_typed_xml = True
+                  _tree = ET.parse(_xml_path)
+                  _root = _tree.getroot()
+                  for tc in _root.iter('testcase'):
+                      test_type_counts[_ttype] = test_type_counts.get(_ttype, 0) + 1
+                      for tag in ('failure', 'error'):
+                          elem = tc.find(tag)
+                          if elem is not None:
+                              test_failures.append({
+                                  'class': tc.get('classname', ''),
+                                  'method': tc.get('name', ''),
+                                  'type': elem.get('type', ''),
+                                  'message': (elem.get('message', '') or '')[:500],
+                              })
+          except Exception:
+              pass
+          # Fallback: parse single results file with classname heuristic
+          if not _found_typed_xml:
+              pytest_xml = 'pr-agent-artifacts/pytest-results.xml'
+              try:
+                  import xml.etree.ElementTree as ET
+                  if os.path.isfile(pytest_xml):
+                      tree = ET.parse(pytest_xml)
+                      root = tree.getroot()
+                      for tc in root.iter('testcase'):
+                          cn = tc.get('classname', '') or ''
+                          name = tc.get('name', '') or ''
+                          full = cn + '::' + name
+                          if 'integration' in full.lower():
+                              test_type_counts['integration'] += 1
+                          elif 'functional' in full.lower():
+                              test_type_counts['functional'] += 1
+                          else:
+                              test_type_counts['unit'] += 1
+                          for tag in ('failure', 'error'):
+                              elem = tc.find(tag)
+                              if elem is not None:
+                                  test_failures.append({
+                                      'class': cn,
+                                      'method': name,
+                                      'type': elem.get('type', ''),
+                                      'message': (elem.get('message', '') or '')[:500],
+                                  })
+              except Exception:
+                  pass
           body = json.dumps({
               "agent_run_id": os.environ.get('RUN_ID', ''),
               "pr_number": os.environ.get('PR_NUM', ''),
