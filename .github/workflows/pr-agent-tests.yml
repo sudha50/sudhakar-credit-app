@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "44"
+  PR_AGENT_TEMPLATE_VERSION: "45"
 
 jobs:
   run-tests:
@@ -243,6 +243,11 @@ jobs:
                   # ADR-022: WireMock for external HTTP service mocking
                   wm_ver = '3.5.4'
                   needed.append(('org.wiremock', 'wiremock-standalone', wm_ver))
+
+                  # E-002: spring-kafka-test for @EmbeddedKafka support
+                  has_kafka = 'kafka' in pom.lower() or 'KafkaTemplate' in pom or 'KafkaListener' in pom
+                  if has_kafka and has_spring_boot:
+                      needed.append(('org.springframework.kafka', 'spring-kafka-test', ''))
 
               # String-based injection: insert before </dependencies>
               # This preserves the original pom.xml structure (comments, formatting, etc.)
