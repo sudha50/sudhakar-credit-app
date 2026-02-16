@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "37"
+  PR_AGENT_TEMPLATE_VERSION: "38"
 
 jobs:
   run-tests:
@@ -226,6 +226,21 @@ jobs:
                   # Without it: NoClassDefFoundError: AbstractJdbcConfiguration
                   needed.append(('org.springframework.data', 'spring-data-jdbc', ''))
 
+              # Testcontainers for @SpringBootTest integration tests
+              # Only inject if any *IntegrationTest.java files exist in the test tree
+              has_integration_tests = False
+              for root, dirs, files in __import__('os').walk('src/test/java'):
+                  if any(f.endswith('IntegrationTest.java') for f in files):
+                      has_integration_tests = True
+                      break
+              if has_integration_tests:
+                  tc_ver = '1.19.7'
+                  needed.append(('org.testcontainers', 'testcontainers', tc_ver))
+                  needed.append(('org.testcontainers', 'junit-jupiter', tc_ver))
+                  needed.append(('org.testcontainers', 'postgresql', tc_ver))
+                  if has_spring_boot:
+                      needed.append(('org.springframework.boot', 'spring-boot-testcontainers', sb_version))
+
               # String-based injection: insert before </dependencies>
               # This preserves the original pom.xml structure (comments, formatting, etc.)
               NL = chr(10)
@@ -281,6 +296,20 @@ jobs:
           spring.flyway.enabled=false
           H2PROPS
               echo "Created application-test.properties with H2 datasource"
+            fi
+            # Docker verification for Testcontainers integration tests
+            HAS_INTEGRATION=$(find src/test/java -name '*IntegrationTest.java' 2>/dev/null | head -1)
+            if [ -n "$HAS_INTEGRATION" ]; then
+              echo "--- Integration tests detected: verifying Docker ---"
+              if docker info >/dev/null 2>&1; then
+                echo "Docker is available — Testcontainers will work"
+                # Set Testcontainers reuse flag for faster container startup
+                mkdir -p "$HOME/.testcontainers"
+                echo "testcontainers.reuse.enable=true" >> "$HOME/.testcontainers/.testcontainers.properties" 2>/dev/null || true
+              else
+                echo "WARNING: Docker is NOT available — integration tests using @Testcontainers may fail"
+                echo "Testcontainers tests will fall back to H2 if application-test.properties is present"
+              fi
             fi
           mvn dependency:resolve -DincludeScope=test 2>&1 | tail -20 || true
 
