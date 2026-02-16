@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "43"
+  PR_AGENT_TEMPLATE_VERSION: "44"
 
 jobs:
   run-tests:
@@ -240,6 +240,9 @@ jobs:
                   needed.append(('org.testcontainers', 'postgresql', tc_ver))
                   if has_spring_boot:
                       needed.append(('org.springframework.boot', 'spring-boot-testcontainers', sb_version))
+                  # ADR-022: WireMock for external HTTP service mocking
+                  wm_ver = '3.5.4'
+                  needed.append(('org.wiremock', 'wiremock-standalone', wm_ver))
 
               # String-based injection: insert before </dependencies>
               # This preserves the original pom.xml structure (comments, formatting, etc.)
