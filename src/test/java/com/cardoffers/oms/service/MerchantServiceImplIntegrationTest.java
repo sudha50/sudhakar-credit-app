@@ -1,12 +1,13 @@
 package com.cardoffers.oms.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.springframework.boot.test.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.MockMvc;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import java.util.List;
 import java.util.Optional;
@@ -16,92 +17,121 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.container.Testcontainers;
-import org.springframework.boot.test.util.DynamicPropertyRegistry;
-import org.springframework.boot.test.util.DynamicPropertySource;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.Testcontainers;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
-import org.springframework.test.web.client.TestRestTemplate;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.cardoffers.oms.exception.ResourceNotFoundException;
+import com.cardoffers.oms.mapper.MerchantMapper;
 import com.cardoffers.oms.model.dto.MerchantDTO;
 import com.cardoffers.oms.model.entity.Merchant;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
+import com.cardoffers.oms.repository.MerchantRepository;
 
-@Testcontainers
+import org.testcontainers.containers.PostgreSQLContainer;
+
 @ExtendWith(SpringExtension.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
+@Testcontainers
 @ActiveProfiles("test")
 public class MerchantServiceImplIntegrationTest {
 
-    @Container
-    private static final PostgreSQLContainer<?> POSTGRESQL_CONTAINER = new PostgreSQLContainer<>("postgres:latest")
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private MerchantRepository merchantRepository;
+
+    @Autowired
+    private MerchantMapper merchantMapper;
+
+    static PostgreSQLContainer<?> postgresContainer = new PostgreSQLContainer<>("postgres:latest")
             .withDatabaseName("testdb")
             .withUsername("test")
             .withPassword("test");
 
+    static {
+        postgresContainer.start();
+    }
+
     @DynamicPropertySource
-    static void configureDatabase(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRESQL_CONTAINER::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRESQL_CONTAINER::getUsername);
-        registry.add("spring.datasource.password", POSTGRESQL_CONTAINER::getPassword);
-    }
-
-    @Autowired
-    private TestRestTemplate restTemplate;
-
-    @Test
-    public void testCreateMerchant() {
-        MerchantDTO merchantDTO = new MerchantDTO();
-        merchantDTO.setName("Test Merchant");
-        merchantDTO.setDescription("A description for test merchant");
-        merchantDTO.setCategory("Test Category");
-        merchantDTO.setLogoUrl("http://example.com/logo.png");
-        merchantDTO.setWebsite("http://example.com");
-        merchantDTO.setActive(true);
-
-        MerchantDTO response = restTemplate.postForObject("/merchants", merchantDTO, MerchantDTO.class);
-
-        assertNotNull(response);
-        assertEquals("Test Merchant", response.getName());
-        assertNotNull(response.getId()); // Assuming ID is generated and returned
+    static void postgresProperties(org.springframework.test.context.DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgresContainer::getJdbcUrl);
+        registry.add("spring.datasource.username", postgresContainer::getUsername);
+        registry.add("spring.datasource.password", postgresContainer::getPassword);
     }
 
     @Test
-    public void testGetMerchantById() {
-        // Assuming there's a merchant with ID 1
-        MerchantDTO merchantDTO = restTemplate.getForObject("/merchants/1", MerchantDTO.class);
+    @Transactional
+    public void testCreateMerchant() throws Exception {
+        MerchantDTO dto = new MerchantDTO();
+        dto.setName("Test Merchant");
+        dto.setDescription("Test Description");
+        dto.setCategory("Test Category");
+        dto.setLogoUrl("http://test.com/logo.png");
+        dto.setWebsite("http://test.com");
+        dto.setActive(true);
 
-        assertNotNull(merchantDTO);
-        assertEquals(1L, merchantDTO.getId());
+        mockMvc.perform(post("/merchants")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Test Merchant\",\"description\":\"Test Description\",\"category\":\"Test Category\",\"logoUrl\":\"http://test.com/logo.png\",\"website\":\"http://test.com\",\"active\":true}"))
+                .andExpect(status().isCreated());
+
+        List<Merchant> merchants = merchantRepository.findByActiveTrue();
+        assertEquals(1, merchants.size());
+        assertEquals("Test Merchant", merchants.get(0).getName());
     }
 
     @Test
-    public void testGetMerchantsByCategory_NotFound() {
-        String nonExistingCategory = "NonExistingCategory";
-        List<MerchantDTO> merchants = restTemplate.getForObject("/merchants/category/" + nonExistingCategory, List.class);
+    @Transactional
+    public void testGetMerchantById_HappyPath() throws Exception {
+        Merchant merchant = new Merchant();
+        merchant.setName("Existing Merchant");
+        merchant.setDescription("An existing merchant");
+        merchant.setCategory("Retail");
+        merchant.setLogoUrl("http://existing.com/logo.png");
+        merchant.setWebsite("http://existing.com");
+        merchant.setActive(true);
+        merchantRepository.save(merchant);
 
-        assertNotNull(merchants);
-        assertTrue(merchants.isEmpty());
+        mockMvc.perform(get("/merchants/{id}", merchant.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Existing Merchant"));
     }
 
     @Test
-    public void testUpdateMerchant() {
-        // Assuming that merchant with ID 1 exists
-        MerchantDTO updateDTO = new MerchantDTO();
-        updateDTO.setName("Updated Merchant");
-        updateDTO.setDescription("Updated description for merchant");
-        updateDTO.setCategory("Updated Category");
-        updateDTO.setLogoUrl("http://example.com/updated_logo.png");
-        updateDTO.setWebsite("http://example.com/updated");
-        updateDTO.setActive(true);
-
-        MerchantDTO updatedMerchant = restTemplate.exchange("/merchants/1", HttpMethod.PUT, new HttpEntity<>(updateDTO), MerchantDTO.class).getBody();
-
-        assertNotNull(updatedMerchant);
-        assertEquals("Updated Merchant", updatedMerchant.getName());
+    public void testGetMerchantById_NotFound() throws Exception {
+        mockMvc.perform(get("/merchants/{id}", 99999))
+                .andExpect(status().isNotFound())
+                .andExpect(result -> assertTrue(result.getResolvedException() instanceof ResourceNotFoundException))
+                .andExpect(result -> assertEquals("Merchant not found", result.getResolvedException().getMessage()));
     }
 
+    @Test
+    @Transactional
+    public void testUpdateMerchant() throws Exception {
+        Merchant merchant = new Merchant();
+        merchant.setName("Merchant To Update");
+        merchant.setDescription("Old Description");
+        merchant.setCategory("Food");
+        merchant.setLogoUrl("http://old.com/logo.png");
+        merchant.setWebsite("http://old.com");
+        merchant.setActive(true);
+        Merchant savedMerchant = merchantRepository.save(merchant);
+
+        mockMvc.perform(put("/merchants/{id}", savedMerchant.getId())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Updated Merchant\",\"description\":\"Updated Description\",\"category\":\"Food\",\"logoUrl\":\"http://updated.com/logo.png\",\"website\":\"http://updated.com\",\"active\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Updated Merchant"));
+
+        Optional<Merchant> updatedMerchant = merchantRepository.findById(savedMerchant.getId());
+        assertTrue(updatedMerchant.isPresent());
+        assertEquals("Updated Merchant", updatedMerchant.get().getName());
+        assertFalse(updatedMerchant.get().getActive());
+    }
 }
