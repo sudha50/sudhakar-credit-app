@@ -1,16 +1,16 @@
 package com.cardoffers.oms.service;
 
 import org.mockito.Mockito;
-import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import org.springframework.boot.test.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,30 +47,30 @@ class MerchantServiceImplFunctionalTest {
     @BeforeEach
     void setUp() {
         merchant = new Merchant();
+        merchant.setId(1L);
         merchant.setName("Test Merchant");
-        merchant.setDescription("A description");
-        merchant.setCategory("Category1");
+        merchant.setDescription("Description");
+        merchant.setCategory("Category");
         merchant.setLogoUrl("http://logo.url");
         merchant.setWebsite("http://website.url");
         merchant.setActive(true);
-        merchant.setId(1L);
 
         merchantDTO = new MerchantDTO();
         merchantDTO.setName("Test Merchant");
-        merchantDTO.setDescription("A description");
-        merchantDTO.setCategory("Category1");
+        merchantDTO.setDescription("Description");
+        merchantDTO.setCategory("Category");
         merchantDTO.setLogoUrl("http://logo.url");
         merchantDTO.setWebsite("http://website.url");
         merchantDTO.setActive(true);
     }
 
     @Test
-    void testGetMerchantById_HappyPath() {
+    void testGetMerchantById() {
         when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant));
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
 
         MerchantDTO result = merchantService.getMerchantById(1L);
-
+        
         assertNotNull(result);
         assertEquals("Test Merchant", result.getName());
     }
@@ -87,18 +87,6 @@ class MerchantServiceImplFunctionalTest {
     }
 
     @Test
-    void testGetMerchantsByCategory_ShouldReturnActiveMerchants() {
-        when(merchantRepository.findByCategory("Category1")).thenReturn(List.of(merchant));
-        when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
-
-        List<MerchantDTO> result = merchantService.getMerchantsByCategory("Category1");
-
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("Test Merchant", result.get(0).getName());
-    }
-
-    @Test
     void testCreateMerchant() {
         when(merchantMapper.toEntity(merchantDTO)).thenReturn(merchant);
         when(merchantRepository.save(merchant)).thenReturn(merchant);
@@ -111,7 +99,7 @@ class MerchantServiceImplFunctionalTest {
     }
 
     @Test
-    void testUpdateMerchant_HappyPath() {
+    void testUpdateMerchant() {
         when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant));
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
         when(merchantRepository.save(merchant)).thenReturn(merchant);
@@ -131,5 +119,20 @@ class MerchantServiceImplFunctionalTest {
         });
 
         assertEquals("Merchant not found", exception.getMessage());
+    }
+
+    @Test
+    void testGetMerchantsByCategory() {
+        List<Merchant> merchants = new ArrayList<>();
+        merchants.add(merchant);
+        
+        when(merchantRepository.findByCategory("Category")).thenReturn(merchants);
+        when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
+
+        List<MerchantDTO> result = merchantService.getMerchantsByCategory("Category");
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals("Test Merchant", result.get(0).getName());
     }
 }

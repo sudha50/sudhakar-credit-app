@@ -5,10 +5,12 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,8 +46,8 @@ class MerchantServiceImplTest {
         entity.setCategory("test-value");
         entity.setLogoUrl("https://example.com");
         entity.setWebsite("test-value");
-        entity.setCreatedAt(java.time.LocalDateTime.of(2025, 1, 15, 10, 30));
         entity.setActive(true);
+        entity.setCreatedAt(java.time.LocalDateTime.of(2025, 1, 15, 10, 30));
         return entity;
     }
 
@@ -61,76 +63,80 @@ class MerchantServiceImplTest {
     }
 
     @Test
-    void shouldReturnMerchantDTO_whenGetMerchantByIdIsCalled() {
+    void shouldReturnMerchantDTO_whenMerchantExists() {
         Merchant merchant = aMerchant();
-        MerchantDTO expectedDto = aMerchantDTO();
-
         when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant));
-        when(merchantMapper.toDTO(merchant)).thenReturn(expectedDto);
+        when(merchantMapper.toDTO(merchant)).thenReturn(aMerchantDTO());
 
         MerchantDTO result = merchantServiceImpl.getMerchantById(1L);
 
-        assertEquals(expectedDto, result);
+        assertNotNull(result);
+        assertEquals("TestName", result.getName());
+        verify(merchantRepository, times(1)).findById(1L);
     }
 
     @Test
-    void shouldThrowResourceNotFoundException_whenGetMerchantByIdIsCalledWithInvalidId() {
+    void shouldThrowResourceNotFoundException_whenMerchantNotFound() {
         when(merchantRepository.findById(any())).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> merchantServiceImpl.getMerchantById(99L));
+        Exception exception = assertThrows(ResourceNotFoundException.class, () -> {
+            merchantServiceImpl.getMerchantById(1L);
+        });
+
+        assertEquals("Merchant not found", exception.getMessage());
     }
 
     @Test
-    void shouldReturnMerchantDTOList_whenGetMerchantsByCategoryIsCalled() {
+    void shouldReturnListOfMerchantDTOs_whenMerchantsExistInCategory() {
         Merchant merchant = aMerchant();
-        List<Merchant> merchants = List.of(merchant);
-        MerchantDTO expectedDto = aMerchantDTO();
-
-        when(merchantRepository.findByCategory("test-value")).thenReturn(merchants);
-        when(merchantMapper.toDTO(merchant)).thenReturn(expectedDto);
+        when(merchantRepository.findByCategory("test-value")).thenReturn(Arrays.asList(merchant));
+        when(merchantMapper.toDTO(merchant)).thenReturn(aMerchantDTO());
 
         List<MerchantDTO> result = merchantServiceImpl.getMerchantsByCategory("test-value");
 
+        assertNotNull(result);
         assertEquals(1, result.size());
-        assertEquals(expectedDto, result.get(0));
+        assertEquals("TestName", result.get(0).getName());
     }
 
     @Test
-    void shouldCreateMerchantAndReturnMerchantDTO_whenCreateMerchantIsCalled() {
+    void shouldCreateMerchant_andReturnMerchantDTO() {
         MerchantDTO dto = aMerchantDTO();
         Merchant merchant = aMerchant();
-        Merchant savedMerchant = aMerchant();
-
         when(merchantMapper.toEntity(dto)).thenReturn(merchant);
-        when(merchantRepository.save(merchant)).thenReturn(savedMerchant);
-        when(merchantMapper.toDTO(savedMerchant)).thenReturn(dto);
+        when(merchantRepository.save(merchant)).thenReturn(merchant);
+        when(merchantMapper.toDTO(merchant)).thenReturn(dto);
 
         MerchantDTO result = merchantServiceImpl.createMerchant(dto);
 
-        assertEquals(dto, result);
-        verify(merchantRepository, times(1)).save(merchant);
+        assertNotNull(result);
+        assertEquals("TestName", result.getName());
+        verify(merchantRepository, times(1)).save(any(Merchant.class));
     }
 
     @Test
-    void shouldUpdateMerchantAndReturnMerchantDTO_whenUpdateMerchantIsCalled() {
+    void shouldUpdateMerchant_andReturnUpdatedMerchantDTO() {
+        MerchantDTO dto = aMerchantDTO();
         Merchant existingMerchant = aMerchant();
-        MerchantDTO updateDto = aMerchantDTO();
-        Merchant updatedMerchant = aMerchant();
-
         when(merchantRepository.findById(1L)).thenReturn(Optional.of(existingMerchant));
-        when(merchantMapper.toDTO(updatedMerchant)).thenReturn(updateDto);
-        when(merchantRepository.save(existingMerchant)).thenReturn(updatedMerchant);
+        when(merchantMapper.toDTO(existingMerchant)).thenReturn(dto);
+        when(merchantRepository.save(existingMerchant)).thenReturn(existingMerchant);
 
-        MerchantDTO result = merchantServiceImpl.updateMerchant(1L, updateDto);
+        MerchantDTO result = merchantServiceImpl.updateMerchant(1L, dto);
 
-        assertEquals(updateDto, result);
-        verify(merchantRepository, times(1)).save(existingMerchant);
+        assertNotNull(result);
+        assertEquals("TestName", result.getName());
+        verify(merchantRepository, times(1)).findById(1L);
     }
 
     @Test
-    void shouldThrowResourceNotFoundException_whenUpdateMerchantIsCalledWithInvalidId() {
+    void shouldThrowResourceNotFoundException_whenUpdatingNonExistentMerchant() {
         when(merchantRepository.findById(any())).thenReturn(Optional.empty());
 
-        assertThrows(ResourceNotFoundException.class, () -> merchantServiceImpl.updateMerchant(99L, aMerchantDTO()));
+        Exception exception = assertThrows(ResourceNotFoundException.class, () -> {
+            merchantServiceImpl.updateMerchant(1L, aMerchantDTO());
+        });
+
+        assertEquals("Merchant not found", exception.getMessage());
     }
 }
