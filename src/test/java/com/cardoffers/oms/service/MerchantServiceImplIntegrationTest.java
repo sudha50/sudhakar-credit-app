@@ -2,50 +2,44 @@ package com.cardoffers.oms.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.springframework.boot.test.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.http.MediaType.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-import static org.springframework.test.web.servlet.setup.MockMvcBuilders.*;
-import static org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc.*;
-import static org.springframework.test.context.DynamicPropertyRegistry.*;
-import static org.springframework.test.context.DynamicPropertySource.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.web.servlet;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.containers.PostgreSQLContainer;
-import org.springframework.boot.testcontainers.lifecycle.Startable;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.cardoffers.oms.exception.ResourceNotFoundException;
 import com.cardoffers.oms.mapper.MerchantMapper;
 import com.cardoffers.oms.model.dto.MerchantDTO;
 import com.cardoffers.oms.model.entity.Merchant;
 import com.cardoffers.oms.repository.MerchantRepository;
-
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.util.List;
-
+@ExtendWith(SpringExtension.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 @ActiveProfiles("test")
 public class MerchantServiceImplIntegrationTest {
 
     @Container
-    public static PostgreSQLContainer<?> postgresContainer = new PostgreSQLContainer<>("postgres:latest")
-            .withDatabaseName("test_db")
+    static PostgreSQLContainer<?> postgresContainer = new PostgreSQLContainer<>("postgres:15-alpine")
+            .withDatabaseName("testdb")
             .withUsername("user")
             .withPassword("password");
 
@@ -54,8 +48,9 @@ public class MerchantServiceImplIntegrationTest {
         registry.add("spring.datasource.url", postgresContainer::getJdbcUrl);
         registry.add("spring.datasource.username", postgresContainer::getUsername);
         registry.add("spring.datasource.password", postgresContainer::getPassword);
+        registry.add("spring.jpa.hibernate.ddl-auto", () -> "update");
     }
-    
+
     @Autowired
     private MerchantServiceImpl merchantService;
 
@@ -66,87 +61,88 @@ public class MerchantServiceImplIntegrationTest {
     private MerchantMapper merchantMapper;
 
     @Test
-    void testCreateMerchant() {
-        MerchantDTO dto = new MerchantDTO();
-        dto.setName("Test Merchant");
-        dto.setDescription("A merchant for testing");
-        dto.setCategory("Food");
-        dto.setLogoUrl("http://example.com/logo.png");
-        dto.setWebsite("http://example.com");
-        dto.setActive(true);
+    public void testCreateMerchant() {
+        MerchantDTO merchantDTO = new MerchantDTO();
+        merchantDTO.setName("Test Merchant");
+        merchantDTO.setDescription("A test merchant");
+        merchantDTO.setCategory("Test Category");
+        merchantDTO.setLogoUrl("http://logo.url/test.png");
+        merchantDTO.setWebsite("http://www.testmerchant.com");
+        merchantDTO.setActive(true);
 
-        MerchantDTO createdMerchant = merchantService.createMerchant(dto);
+        MerchantDTO createdMerchant = merchantService.createMerchant(merchantDTO);
 
         assertNotNull(createdMerchant);
-        assertEquals("Test Merchant", createdMerchant.getName());
-        assertEquals("A merchant for testing", createdMerchant.getDescription());
+        assertEquals(merchantDTO.getName(), createdMerchant.getName());
+        assertEquals(merchantDTO.getDescription(), createdMerchant.getDescription());
     }
 
     @Test
-    void testGetMerchantById() {
+    public void testGetMerchantById() {
         Merchant merchant = new Merchant();
         merchant.setName("Existing Merchant");
         merchant.setDescription("An existing merchant");
-        merchant.setCategory("Retail");
-        merchant.setLogoUrl("http://example.com/logo_existing.png");
-        merchant.setWebsite("http://example_existing.com");
+        merchant.setCategory("Existing Category");
+        merchant.setLogoUrl("http://logo.url/existing.png");
+        merchant.setWebsite("http://www.existingmerchant.com");
         merchant.setActive(true);
-        merchantRepository.save(merchant);
+        merchant = merchantRepository.save(merchant);
 
         MerchantDTO foundMerchant = merchantService.getMerchantById(merchant.getId());
 
         assertNotNull(foundMerchant);
-        assertEquals("Existing Merchant", foundMerchant.getName());
+        assertEquals(merchant.getName(), foundMerchant.getName());
     }
 
     @Test
-    void testGetMerchantsByCategory() {
+    public void testGetMerchantsByCategory() {
         Merchant merchant1 = new Merchant();
-        merchant1.setName("Food Merchant 1");
-        merchant1.setDescription("First food merchant");
-        merchant1.setCategory("Food");
-        merchant1.setLogoUrl("http://example.com/logo_food1.png");
-        merchant1.setWebsite("http://example_food1.com");
+        merchant1.setName("Merchant A");
+        merchant1.setDescription("Description A");
+        merchant1.setCategory("Category A");
+        merchant1.setLogoUrl("http://logo.url/1.png");
+        merchant1.setWebsite("http://www.merchant1.com");
         merchant1.setActive(true);
         merchantRepository.save(merchant1);
-        
+
         Merchant merchant2 = new Merchant();
-        merchant2.setName("Food Merchant 2");
-        merchant2.setDescription("Second food merchant");
-        merchant2.setCategory("Food");
-        merchant2.setLogoUrl("http://example.com/logo_food2.png");
-        merchant2.setWebsite("http://example_food2.com");
-        merchant2.setActive(true);
+        merchant2.setName("Merchant B");
+        merchant2.setDescription("Description B");
+        merchant2.setCategory("Category A");
+        merchant2.setLogoUrl("http://logo.url/2.png");
+        merchant2.setWebsite("http://www.merchant2.com");
+        merchant2.setActive(false);
         merchantRepository.save(merchant2);
 
-        List<MerchantDTO> foodMerchants = merchantService.getMerchantsByCategory("Food");
-
-        assertEquals(2, foodMerchants.size());
+        List<MerchantDTO> merchants = merchantService.getMerchantsByCategory("Category A");
+        
+        assertEquals(1, merchants.size());
+        assertEquals("Merchant A", merchants.get(0).getName());
     }
 
     @Test
-    void testUpdateMerchant() {
+    public void testUpdateMerchant() {
         Merchant merchant = new Merchant();
-        merchant.setName("Update Merchant");
-        merchant.setDescription("Merchant to update");
-        merchant.setCategory("Tech");
-        merchant.setLogoUrl("http://example.com/logo_update.png");
-        merchant.setWebsite("http://example_update.com");
+        merchant.setName("Old Merchant");
+        merchant.setDescription("Old Description");
+        merchant.setCategory("Old Category");
+        merchant.setLogoUrl("http://logo.url/old.png");
+        merchant.setWebsite("http://www.oldmerchant.com");
         merchant.setActive(true);
-        Merchant savedMerchant = merchantRepository.save(merchant);
+        merchant = merchantRepository.save(merchant);
 
-        MerchantDTO updatedData = new MerchantDTO();
-        updatedData.setName("Updated Merchant");
-        updatedData.setDescription("Updated description");
-        updatedData.setCategory("Tech");
-        updatedData.setLogoUrl("http://example.com/logo_updated.png");
-        updatedData.setWebsite("http://updated_example.com");
-        updatedData.setActive(false);
+        MerchantDTO updateDTO = new MerchantDTO();
+        updateDTO.setName("Updated Merchant");
+        updateDTO.setDescription("Updated Description");
+        updateDTO.setCategory("Updated Category");
+        updateDTO.setLogoUrl("http://logo.url/updated.png");
+        updateDTO.setWebsite("http://www.updatedmerchant.com");
+        updateDTO.setActive(false);
 
-        MerchantDTO updatedMerchant = merchantService.updateMerchant(savedMerchant.getId(), updatedData);
+        MerchantDTO updatedMerchant = merchantService.updateMerchant(merchant.getId(), updateDTO);
 
         assertNotNull(updatedMerchant);
         assertEquals("Updated Merchant", updatedMerchant.getName());
-        assertFalse(updatedMerchant.getActive());
+        assertEquals("Updated Description", updatedMerchant.getDescription());
     }
 }
