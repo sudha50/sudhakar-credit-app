@@ -10,7 +10,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,36 +40,35 @@ class MerchantServiceImplFunctionalTest {
     @InjectMocks
     private MerchantServiceImpl merchantService;
 
-    private Merchant merchant;
     private MerchantDTO merchantDTO;
+    private Merchant merchant;
 
     @BeforeEach
     void setUp() {
-        merchant = new Merchant();
-        merchant.setId(1L);
-        merchant.setName("Test Merchant");
-        merchant.setDescription("Description");
-        merchant.setCategory("Category");
-        merchant.setLogoUrl("http://logo.url");
-        merchant.setWebsite("http://website.url");
-        merchant.setActive(true);
-
         merchantDTO = new MerchantDTO();
         merchantDTO.setName("Test Merchant");
-        merchantDTO.setDescription("Description");
-        merchantDTO.setCategory("Category");
-        merchantDTO.setLogoUrl("http://logo.url");
-        merchantDTO.setWebsite("http://website.url");
+        merchantDTO.setDescription("Test Description");
+        merchantDTO.setCategory("Test Category");
+        merchantDTO.setLogoUrl("http://testlogo.com/logo.png");
+        merchantDTO.setWebsite("http://testmerchant.com");
         merchantDTO.setActive(true);
+
+        merchant = new Merchant();
+        merchant.setName("Test Merchant");
+        merchant.setDescription("Test Description");
+        merchant.setCategory("Test Category");
+        merchant.setLogoUrl("http://testlogo.com/logo.png");
+        merchant.setWebsite("http://testmerchant.com");
+        merchant.setActive(true);
     }
 
     @Test
-    void testGetMerchantById() {
+    void testGetMerchantById_Success() {
         when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant));
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
 
         MerchantDTO result = merchantService.getMerchantById(1L);
-        
+
         assertNotNull(result);
         assertEquals("Test Merchant", result.getName());
     }
@@ -79,7 +77,7 @@ class MerchantServiceImplFunctionalTest {
     void testGetMerchantById_NotFound() {
         when(merchantRepository.findById(1L)).thenReturn(Optional.empty());
 
-        ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () -> {
+        Exception exception = assertThrows(ResourceNotFoundException.class, () -> {
             merchantService.getMerchantById(1L);
         });
 
@@ -87,9 +85,9 @@ class MerchantServiceImplFunctionalTest {
     }
 
     @Test
-    void testCreateMerchant() {
-        when(merchantMapper.toEntity(merchantDTO)).thenReturn(merchant);
-        when(merchantRepository.save(merchant)).thenReturn(merchant);
+    void testCreateMerchant_Success() {
+        when(merchantMapper.toEntity(any(MerchantDTO.class))).thenReturn(merchant);
+        when(merchantRepository.save(any(Merchant.class))).thenReturn(merchant);
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
 
         MerchantDTO result = merchantService.createMerchant(merchantDTO);
@@ -99,10 +97,10 @@ class MerchantServiceImplFunctionalTest {
     }
 
     @Test
-    void testUpdateMerchant() {
+    void testUpdateMerchant_Success() {
         when(merchantRepository.findById(1L)).thenReturn(Optional.of(merchant));
+        when(merchantRepository.save(any(Merchant.class))).thenReturn(merchant);
         when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
-        when(merchantRepository.save(merchant)).thenReturn(merchant);
 
         MerchantDTO result = merchantService.updateMerchant(1L, merchantDTO);
 
@@ -114,25 +112,10 @@ class MerchantServiceImplFunctionalTest {
     void testUpdateMerchant_NotFound() {
         when(merchantRepository.findById(1L)).thenReturn(Optional.empty());
 
-        ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class, () -> {
+        Exception exception = assertThrows(ResourceNotFoundException.class, () -> {
             merchantService.updateMerchant(1L, merchantDTO);
         });
 
         assertEquals("Merchant not found", exception.getMessage());
-    }
-
-    @Test
-    void testGetMerchantsByCategory() {
-        List<Merchant> merchants = new ArrayList<>();
-        merchants.add(merchant);
-        
-        when(merchantRepository.findByCategory("Category")).thenReturn(merchants);
-        when(merchantMapper.toDTO(merchant)).thenReturn(merchantDTO);
-
-        List<MerchantDTO> result = merchantService.getMerchantsByCategory("Category");
-
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("Test Merchant", result.get(0).getName());
     }
 }
