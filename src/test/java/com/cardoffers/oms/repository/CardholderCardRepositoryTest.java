@@ -33,10 +33,10 @@ class CardholderCardRepositoryTest {
         card.setCardholderId(1L);
         card.setActive(true);
         entityManager.persist(card);
-        
+
         // Act
         List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
-        
+
         // Assert
         assertNotNull(result);
         assertEquals(1, result.size());
@@ -55,10 +55,10 @@ class CardholderCardRepositoryTest {
         inactiveCard.setCardholderId(2L);
         inactiveCard.setActive(false);
         entityManager.persist(inactiveCard);
-        
+
         // Act
         List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
-        
+
         // Assert
         assertNotNull(result);
         assertEquals(1, result.size());
@@ -69,7 +69,7 @@ class CardholderCardRepositoryTest {
     void shouldReturnEmptyList_whenNoCardsForCardholderId() {
         // Act
         List<CardholderCard> result = cardholderCardRepository.findByCardholderId(999L);
-        
+
         // Assert
         assertNotNull(result);
         assertTrue(result.isEmpty());
@@ -82,12 +82,13 @@ class CardholderCardRepositoryTest {
         card.setCardholderId(3L);
         card.setActive(false);
         entityManager.persist(card);
-        
+
         // Act
         List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(3L);
-        
+
         // Assert
         assertNotNull(result);
         assertTrue(result.isEmpty());
     }
+
 }

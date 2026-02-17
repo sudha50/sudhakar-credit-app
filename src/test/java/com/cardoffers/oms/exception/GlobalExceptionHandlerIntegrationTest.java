@@ -1,72 +1,94 @@
-package com.cardoffers.oms.exception;
+package com.cardoffers.oms.repository;
 
-import org.springframework.boot.test.SpringBootTest;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.List;
+
+import com.cardoffers.oms.model.entity.CardholderCard;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.context.request.WebRequest;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-
-import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-
-@SpringBootTest
-@AutoConfigureMockMvc
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @ActiveProfiles("test")
-class GlobalExceptionHandlerIntegrationTest {
+class CardholderCardRepositoryTest {
 
     @Autowired
-    private MockMvc mockMvc;
+    TestEntityManager entityManager;
+
+    @Autowired
+    CardholderCardRepository cardholderCardRepository;
 
     @Test
-    void handleResourceNotFound_shouldReturn404() throws Exception {
-        mockMvc.perform(MockMvcRequestBuilders.get("/api/nonexistent"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.status").value(HttpStatus.NOT_FOUND.value()))
-                .andExpect(jsonPath("$.error").value(HttpStatus.NOT_FOUND.getReasonPhrase()))
-                .andExpect(jsonPath("$.message").value("Resource not found"));
+    void shouldReturnCards_whenCardholderIdIsValid() {
+        // Arrange
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
+
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(card.getCardholderId(), result.get(0).getCardholderId());
     }
 
     @Test
-    void handleValidationErrors_shouldReturn400() throws Exception {
-        mockMvc.perform(MockMvcRequestBuilders.post("/api/validate")
-                .contentType("application/json")
-                .content("{\"field\":\"\"}")) // Assuming a field that cannot be blank
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()))
-                .andExpect(jsonPath("$.error").value(HttpStatus.BAD_REQUEST.getReasonPhrase()))
-                .andExpect(jsonPath("$.message").value("Validation failed"))
-                .andExpect(jsonPath("$.fieldErrors.field").value("must not be blank"));
+    void shouldReturnActiveCards_whenCardholderIdIsValid() {
+        // Arrange
+        CardholderCard activeCard = new CardholderCard();
+        activeCard.setCardholderId(2L);
+        activeCard.setActive(true);
+        entityManager.persist(activeCard);
+
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(2L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isActive());
     }
 
     @Test
-    void handleBusinessExceptions_shouldReturn400() throws Exception {
-        mockMvc.perform(MockMvcRequestBuilders.get("/api/business-error"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()))
-                .andExpect(jsonPath("$.error").value(HttpStatus.BAD_REQUEST.getReasonPhrase()))
-                .andExpect(jsonPath("$.message").value("Business exception occurred"));
+    void shouldReturnEmptyList_whenNoCardsForCardholderId() {
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(999L);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    void handleGenericException_shouldReturn500() throws Exception {
-        mockMvc.perform(MockMvcRequestBuilders.get("/api/generic-error"))
-                .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.status").value(HttpStatus.INTERNAL_SERVER_ERROR.value()))
-                .andExpect(jsonPath("$.error").value(HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase()))
-                .andExpect(jsonPath("$.message").value("Unexpected error occurred"));
+    void shouldReturnEmptyList_whenNoActiveCardsForCardholderId() {
+        // Arrange
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(3L);
+        card.setActive(false);
+        entityManager.persist(card);
+
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(3L);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
+
 }

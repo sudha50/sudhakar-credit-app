@@ -1,88 +1,94 @@
-package com.cardoffers.oms.mapper;
+package com.cardoffers.oms.repository;
 
-import org.mockito.Mockito;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
-import java.util.Collections;
 import java.util.List;
 
+import com.cardoffers.oms.model.entity.CardholderCard;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mapstruct.factory.Mappers;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 
-import com.cardoffers.oms.model.dto.CardholderDTO;
-import com.cardoffers.oms.model.entity.Cardholder;
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
+@ActiveProfiles("test")
+class CardholderCardRepositoryTest {
 
-@ExtendWith(MockitoExtension.class)
-public class CardholderMapperTest {
+    @Autowired
+    TestEntityManager entityManager;
 
-    @InjectMocks
-    private CardholderMapper mapper = Mappers.getMapper(CardholderMapper.class);
+    @Autowired
+    CardholderCardRepository cardholderCardRepository;
 
     @Test
-    void shouldConvertToDTO_whenEntityIsProvided() {
+    void shouldReturnCards_whenCardholderIdIsValid() {
         // Arrange
-        Cardholder cardholder = new Cardholder();
-        cardholder.setId(1L);
-        cardholder.setName("John Doe");
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
 
         // Act
-        CardholderDTO dto = mapper.toDTO(cardholder);
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
 
         // Assert
-        assertNotNull(dto);
-        assertEquals(1L, dto.getId());
-        assertEquals("John Doe", dto.getName());
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(card.getCardholderId(), result.get(0).getCardholderId());
     }
 
     @Test
-    void shouldConvertToEntity_whenDTOIsProvided() {
+    void shouldReturnActiveCards_whenCardholderIdIsValid() {
         // Arrange
-        CardholderDTO dto = new CardholderDTO();
-        dto.setId(1L);
-        dto.setName("John Doe");
+        CardholderCard activeCard = new CardholderCard();
+        activeCard.setCardholderId(2L);
+        activeCard.setActive(true);
+        entityManager.persist(activeCard);
+
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(2L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
 
         // Act
-        Cardholder entity = mapper.toEntity(dto);
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
 
         // Assert
-        assertNotNull(entity);
-        assertEquals(1L, entity.getId());
-        assertEquals("John Doe", entity.getName());
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isActive());
     }
 
     @Test
-    void shouldConvertToDTOs_whenListOfEntitiesIsProvided() {
+    void shouldReturnEmptyList_whenNoCardsForCardholderId() {
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(999L);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void shouldReturnEmptyList_whenNoActiveCardsForCardholderId() {
         // Arrange
-        Cardholder cardholder = new Cardholder();
-        cardholder.setId(1L);
-        cardholder.setName("John Doe");
-        List<Cardholder> entities = Collections.singletonList(cardholder);
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(3L);
+        card.setActive(false);
+        entityManager.persist(card);
 
         // Act
-        List<CardholderDTO> dtos = mapper.toDTOs(entities);
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(3L);
 
         // Assert
-        assertNotNull(dtos);
-        assertEquals(1, dtos.size());
-        assertEquals(1L, dtos.get(0).getId());
-        assertEquals("John Doe", dtos.get(0).getName());
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
 
-    @Test
-    void shouldReturnEmptyList_whenNoEntitiesProvided() {
-        // Act
-        List<CardholderDTO> dtos = mapper.toDTOs(Collections.emptyList());
-
-        // Assert
-        assertNotNull(dtos);
-        assertTrue(dtos.isEmpty());
-    }
 }

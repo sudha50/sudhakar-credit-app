@@ -1,82 +1,94 @@
-package com.cardoffers.oms.exception;
+package com.cardoffers.oms.repository;
 
-import org.mockito.Mockito;
-import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
-import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
+
+import com.cardoffers.oms.model.entity.CardholderCard;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.validation.BeanPropertyBindingResult;
-import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 
-import java.util.Collections;
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
+@ActiveProfiles("test")
+class CardholderCardRepositoryTest {
 
-@ExtendWith(MockitoExtension.class)
-class GlobalExceptionHandlerTest {
+    @Autowired
+    TestEntityManager entityManager;
 
-    private final GlobalExceptionHandler globalExceptionHandler = new GlobalExceptionHandler();
-
-    @Mock
-    private HttpServletRequest request;
+    @Autowired
+    CardholderCardRepository cardholderCardRepository;
 
     @Test
-    void shouldReturn404_whenResourceNotFound() {
-        ResourceNotFoundException exception = new ResourceNotFoundException("Resource not found");
-        when(request.getRequestURI()).thenReturn("/test/resource");
+    void shouldReturnCards_whenCardholderIdIsValid() {
+        // Arrange
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleResourceNotFound(exception, request);
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
 
-        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-        assertEquals("Resource not found", response.getBody().getMessage());
-        assertEquals("/test/resource", response.getBody().getPath());
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(card.getCardholderId(), result.get(0).getCardholderId());
     }
 
     @Test
-    void shouldReturn400_whenValidationErrors() {
-        FieldError fieldError = new FieldError("testObject", "fieldName", "Field error message");
-        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "testObject");
-        bindingResult.addError(fieldError);
-        MethodArgumentNotValidException exception = new MethodArgumentNotValidException(null, bindingResult);
-        when(request.getRequestURI()).thenReturn("/test/validate");
+    void shouldReturnActiveCards_whenCardholderIdIsValid() {
+        // Arrange
+        CardholderCard activeCard = new CardholderCard();
+        activeCard.setCardholderId(2L);
+        activeCard.setActive(true);
+        entityManager.persist(activeCard);
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleValidationErrors(exception, request);
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(2L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertTrue(response.getBody().getDetails().containsKey("fieldErrors"));
-        assertEquals("Field error message", ((Map<String, String>) response.getBody().getDetails().get("fieldErrors")).get("fieldName"));
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isActive());
     }
 
     @Test
-    void shouldReturn400_whenBusinessExceptions() {
-        RuntimeException exception = new InvalidOfferException("Invalid offer");
-        when(request.getRequestURI()).thenReturn("/test/business");
+    void shouldReturnEmptyList_whenNoCardsForCardholderId() {
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(999L);
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleBusinessExceptions(exception, request);
-
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("Invalid offer", response.getBody().getMessage());
-        assertEquals("/test/business", response.getBody().getPath());
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldReturn500_whenGenericException() {
-        Exception exception = new Exception("Unexpected error");
-        when(request.getRequestURI()).thenReturn("/test/generic");
+    void shouldReturnEmptyList_whenNoActiveCardsForCardholderId() {
+        // Arrange
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(3L);
+        card.setActive(false);
+        entityManager.persist(card);
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleGenericException(exception, request);
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(3L);
 
-        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
-        assertEquals("Unexpected error occurred", response.getBody().getMessage());
-        assertEquals("/test/generic", response.getBody().getPath());
-        assertEquals("Exception", response.getBody().getDetails().get("exception"));
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
+
 }

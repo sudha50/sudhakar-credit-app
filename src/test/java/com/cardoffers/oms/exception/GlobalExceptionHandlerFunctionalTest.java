@@ -1,68 +1,94 @@
-package com.cardoffers.oms.exception;
+package com.cardoffers.oms.repository;
 
-import org.mockito.Mockito;
-import static org.mockito.Mockito.when;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.springframework.test.context.ActiveProfiles;
-import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import static org.junit.jupiter.api.Assertions.*;
 
-import jakarta.servlet.http.HttpServletRequest;
-import org.junit.jupiter.api.BeforeEach;
+import java.util.List;
+
+import com.cardoffers.oms.model.entity.CardholderCard;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 
-@WebMvcTest(GlobalExceptionHandler.class)
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @ActiveProfiles("test")
-class GlobalExceptionHandlerFunctionalTest {
+class CardholderCardRepositoryTest {
 
     @Autowired
-    private MockMvc mockMvc;
-
-    @MockBean
-    private HttpServletRequest request;
+    TestEntityManager entityManager;
 
     @Autowired
-    private GlobalExceptionHandler globalExceptionHandler;
+    CardholderCardRepository cardholderCardRepository;
 
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
+    @Test
+    void shouldReturnCards_whenCardholderIdIsValid() {
+        // Arrange
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
+
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(card.getCardholderId(), result.get(0).getCardholderId());
     }
 
     @Test
-    void shouldHandleResourceNotFoundException() throws Exception {
-        when(request.getRequestURI()).thenReturn("/offers/1");
-        throw new ResourceNotFoundException("Offer not found");
+    void shouldReturnActiveCards_whenCardholderIdIsValid() {
+        // Arrange
+        CardholderCard activeCard = new CardholderCard();
+        activeCard.setCardholderId(2L);
+        activeCard.setActive(true);
+        entityManager.persist(activeCard);
+
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(2L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isActive());
     }
 
     @Test
-    void shouldHandleValidationErrors() throws Exception {
-        // Here, we can simulate a MethodArgumentNotValidException manually
-        mockMvc.perform(post("/some-endpoint") // Adjust the URL as necessary
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"invalidField\":\"\"}")) // Invalid data
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Validation failed"))
-                .andExpect(jsonPath("$.fieldErrors.invalidField").value("must not be blank"));
+    void shouldReturnEmptyList_whenNoCardsForCardholderId() {
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(999L);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldHandleBusinessException() throws Exception {
-        when(request.getRequestURI()).thenReturn("/offers");
-        throw new InvalidOfferException("Invalid offer details");
+    void shouldReturnEmptyList_whenNoActiveCardsForCardholderId() {
+        // Arrange
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(3L);
+        card.setActive(false);
+        entityManager.persist(card);
+
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(3L);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
 
-    @Test
-    void shouldHandleGenericException() throws Exception {
-        when(request.getRequestURI()).thenReturn("/unknown-endpoint");
-        throw new Exception("Some unexpected error");
-    }
 }

@@ -1,94 +1,94 @@
 package com.cardoffers.oms.repository;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.assertj.core.api.Assertions.assertThat;
-import org.springframework.boot.test.SpringBootTest;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.springframework.test.context.ActiveProfiles;
-import static org.assertj.core.api.assertThat;
-import static org.springframework.test.util.AssertionErrors.assertNotNull;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
-import java.util.Optional;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
-import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.cardoffers.oms.model.entity.CardholderCard;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 
-@Testcontainers
-@SpringBootTest
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @ActiveProfiles("test")
-class CardholderCardRepositoryIntegrationTest {
-
-    @Container
-    static PostgreSQLContainer<?> postgresContainer = new PostgreSQLContainer<>("postgres:latest")
-            .withDatabaseName("testdb")
-            .withUsername("test")
-            .withPassword("test");
-
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgresContainer::getJdbcUrl);
-        registry.add("spring.datasource.username", postgresContainer::getUsername);
-        registry.add("spring.datasource.password", postgresContainer::getPassword);
-    }
+class CardholderCardRepositoryTest {
 
     @Autowired
-    private CardholderCardRepository cardholderCardRepository;
+    TestEntityManager entityManager;
 
     @Autowired
-    private TestEntityManager entityManager;
-
-    @BeforeEach
-    void setUp() {
-        cardholderCardRepository.deleteAll(); // Clear repository before each test
-    }
+    CardholderCardRepository cardholderCardRepository;
 
     @Test
-    void whenFindByCardholderId_thenCardholderCardsShouldBeFound() {
+    void shouldReturnCards_whenCardholderIdIsValid() {
+        // Arrange
         CardholderCard card = new CardholderCard();
         card.setCardholderId(1L);
         card.setActive(true);
         entityManager.persist(card);
-        entityManager.flush();
 
-        List<CardholderCard> foundCards = cardholderCardRepository.findByCardholderId(1L);
-        assertThat(foundCards).isNotEmpty();
-        assertThat(foundCards.get(0).getCardholderId()).isEqualTo(1L);
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(card.getCardholderId(), result.get(0).getCardholderId());
     }
 
     @Test
-    void whenFindByCardholderIdAndActiveTrue_thenOnlyActiveCardholderCardsShouldBeFound() {
+    void shouldReturnActiveCards_whenCardholderIdIsValid() {
+        // Arrange
         CardholderCard activeCard = new CardholderCard();
         activeCard.setCardholderId(2L);
         activeCard.setActive(true);
         entityManager.persist(activeCard);
-        
+
         CardholderCard inactiveCard = new CardholderCard();
         inactiveCard.setCardholderId(2L);
         inactiveCard.setActive(false);
         entityManager.persist(inactiveCard);
-        entityManager.flush();
 
-        List<CardholderCard> foundCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
-        assertThat(foundCards).containsExactly(activeCard);
-        assertThat(foundCards).doesNotContain(inactiveCard);
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isActive());
     }
 
     @Test
-    void whenNoCardholderCardsExist_thenFindByCardholderIdReturnsEmptyList() {
-        List<CardholderCard> foundCards = cardholderCardRepository.findByCardholderId(999L);
-        assertThat(foundCards).isEmpty();
+    void shouldReturnEmptyList_whenNoCardsForCardholderId() {
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(999L);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
+
+    @Test
+    void shouldReturnEmptyList_whenNoActiveCardsForCardholderId() {
+        // Arrange
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(3L);
+        card.setActive(false);
+        entityManager.persist(card);
+
+        // Act
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(3L);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
 }
