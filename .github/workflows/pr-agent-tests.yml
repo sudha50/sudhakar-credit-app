@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "45"
+  PR_AGENT_TEMPLATE_VERSION: "46"
 
 jobs:
   run-tests:
@@ -704,14 +704,30 @@ jobs:
                   root = tree.getroot()
                   suite_name = root.get('name', '')
                   tests_in_suite = int(root.get('tests', '0'))
-                  # Classify by class name suffix
-                  if suite_name.endswith('FunctionalTest'):
+                  testcases = root.findall('.//testcase')
+                  def _infer_type(name):
+                      n = (name or '').lower()
+                      if 'functionaltest' in n:
+                          return 'functional'
+                      if 'integrationtest' in n:
+                          return 'integration'
+                      return ''
+                  ttype = _infer_type(suite_name)
+                  if not ttype:
+                      ttype = _infer_type(os.path.basename(xml_path))
+                  if not ttype:
+                      for tc in testcases:
+                          cn = tc.get('classname', '')
+                          ttype = _infer_type(cn)
+                          if ttype:
+                              break
+                  if ttype == 'functional':
                       test_type_counts['functional'] += tests_in_suite
-                  elif suite_name.endswith('IntegrationTest'):
+                  elif ttype == 'integration':
                       test_type_counts['integration'] += tests_in_suite
                   else:
                       test_type_counts['unit'] += tests_in_suite
-                  for tc in root.findall('.//testcase'):
+                  for tc in testcases:
                       failure = tc.find('failure')
                       error = tc.find('error')
                       elem = failure if failure is not None else error
