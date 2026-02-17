@@ -4,12 +4,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
-class OfferManagementSystemApplicationTest {
+public class OfferManagementSystemApplicationTest {
 
     @Test
-    void shouldStartApplication_whenMainMethodIsCalled() {
+    void shouldNotThrowException_whenMainIsCalled() {
         String[] args = {};
         assertDoesNotThrow(() -> OfferManagementSystemApplication.main(args));
     }
