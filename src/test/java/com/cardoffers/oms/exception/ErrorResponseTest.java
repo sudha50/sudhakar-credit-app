@@ -2,29 +2,27 @@ package com.cardoffers.oms.exception;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.Map;
 
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
-public class ErrorResponseTest {
+class ErrorResponseTest {
 
     @Test
-    void shouldCreateErrorResponse_withAllFields() {
-        Map<String, Object> details = new HashMap<>();
+    void shouldCreateErrorResponse_whenAllFieldsProvided() {
+        var details = new HashMap<String, Object>();
         details.put("key", "value");
-
-        ErrorResponse errorResponse = ErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(404)
-                .error("Not Found")
-                .message("The requested resource was not found.")
-                .path("/api/resource")
-                .details(details)
-                .build();
+        
+        ErrorResponse errorResponse = new ErrorResponse();
+        errorResponse.setTimestamp(LocalDateTime.now());
+        errorResponse.setStatus(404);
+        errorResponse.setError("Not Found");
+        errorResponse.setMessage("The requested resource was not found.");
+        errorResponse.setPath("/api/resource");
+        errorResponse.setDetails(details);
 
         assertNotNull(errorResponse);
         assertEquals(404, errorResponse.getStatus());
@@ -35,18 +33,10 @@ public class ErrorResponseTest {
     }
 
     @Test
-    void shouldSetTimestamp_whenUsingSetter() {
-        ErrorResponse errorResponse = new ErrorResponse();
-        LocalDateTime now = LocalDateTime.now();
-        errorResponse.setTimestamp(now);
-        
-        assertEquals(now, errorResponse.getTimestamp());
-    }
-
-    @Test
-    void shouldReturnDefaultValues_whenNoArgsConstructorUsed() {
+    void shouldSetDefaultValues_whenNoArgsConstructorUsed() {
         ErrorResponse errorResponse = new ErrorResponse();
 
+        assertNotNull(errorResponse);
         assertNull(errorResponse.getTimestamp());
         assertEquals(0, errorResponse.getStatus());
         assertNull(errorResponse.getError());
@@ -56,31 +46,47 @@ public class ErrorResponseTest {
     }
 
     @Test
-    void shouldBuildErrorResponseWithBuilderPattern() {
-        ErrorResponse errorResponse = ErrorResponse.builder()
-                .status(500)
-                .error("Internal Server Error")
-                .message("An unexpected error occurred.")
-                .path("/api/unknown")
-                .build();
+    void shouldUpdateErrorResponseFields_whenSettersCalled() {
+        ErrorResponse errorResponse = new ErrorResponse();
+        errorResponse.setStatus(500);
+        errorResponse.setError("Internal Server Error");
 
         assertEquals(500, errorResponse.getStatus());
         assertEquals("Internal Server Error", errorResponse.getError());
-        assertEquals("An unexpected error occurred.", errorResponse.getMessage());
-        assertEquals("/api/unknown", errorResponse.getPath());
-        assertNull(errorResponse.getTimestamp());
-        assertNull(errorResponse.getDetails());
     }
 
     @Test
-    void shouldCreateErrorResponseWithDetails_whenProvided() {
-        Map<String, Object> details = new HashMap<>();
-        details.put("errorCode", "E123");
-
+    void shouldNotThrowException_whenSettingNullFields() {
         ErrorResponse errorResponse = new ErrorResponse();
-        errorResponse.setDetails(details);
+        
+        assertDoesNotThrow(() -> {
+            errorResponse.setMessage(null);
+            errorResponse.setPath(null);
+        });
+        
+        assertNull(errorResponse.getMessage());
+        assertNull(errorResponse.getPath());
+    }
 
-        assertNotNull(errorResponse.getDetails());
+    @Test
+    void shouldCreateErrorResponseWithBuilder_whenAllFieldsProvided() {
+        var details = new HashMap<String, Object>();
+        details.put("key", "value");
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(400)
+                .error("Bad Request")
+                .message("Invalid input provided.")
+                .path("/api/resource")
+                .details(details)
+                .build();
+
+        assertNotNull(errorResponse);
+        assertEquals(400, errorResponse.getStatus());
+        assertEquals("Bad Request", errorResponse.getError());
+        assertEquals("Invalid input provided.", errorResponse.getMessage());
+        assertEquals("/api/resource", errorResponse.getPath());
         assertEquals(details, errorResponse.getDetails());
     }
 }
