@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "47"
+  PR_AGENT_TEMPLATE_VERSION: "48"
 
 jobs:
   run-tests:
@@ -219,14 +219,16 @@ jobs:
                   # spring-boot-test-autoconfigure contains @DataJpaTest, @WebMvcTest etc.
                   # It is a transitive of starter-test but may not resolve when version is managed
                   needed.append(('org.springframework.boot', 'spring-boot-test-autoconfigure', sb_version))
-                  # H2 in-memory database for @DataJpaTest repository tests
-                  needed.append(('com.h2database', 'h2', ''))
-                  # Ensure spring-data-jpa is available for @DataJpaTest autoconfig
-                  if 'spring-boot-starter-data-jpa' in pom:
+                  # H2 + spring-data-jdbc only needed when project uses JPA (for @DataJpaTest)
+                  has_data_jpa = 'spring-boot-starter-data-jpa' in pom or 'spring-data-jpa' in pom
+                  if has_data_jpa:
+                      # H2 in-memory database for @DataJpaTest repository tests
+                      needed.append(('com.h2database', 'h2', ''))
                       needed.append(('org.springframework.boot', 'spring-boot-starter-data-jpa', sb_version))
-                  # spring-data-jdbc is needed by DataJdbcTypeExcludeFilter (loaded by @DataJpaTest)
-                  # Without it: NoClassDefFoundError: AbstractJdbcConfiguration
-                  needed.append(('org.springframework.data', 'spring-data-jdbc', ''))
+                      # spring-data-jdbc needed by DataJdbcTypeExcludeFilter (loaded by @DataJpaTest)
+                      # Without it: NoClassDefFoundError: AbstractJdbcConfiguration
+                      # Use starter to get proper version management from Spring Boot BOM
+                      needed.append(('org.springframework.boot', 'spring-boot-starter-data-jdbc', sb_version))
 
               # Testcontainers for @SpringBootTest integration tests
               # Only inject if any *IntegrationTest.java files exist in the test tree
@@ -314,7 +316,7 @@ jobs:
               echo "Created application-test.properties (copy of H2 config)"
             fi
             # Docker verification for Testcontainers integration tests
-            HAS_INTEGRATION=$(find src/test/java -name '*IntegrationTest.java' 2>/dev/null | head -1)
+            HAS_INTEGRATION=$(find src/test/java -name '*IntegrationTest.java' -print -quit 2>/dev/null || true)
             if [ -n "$HAS_INTEGRATION" ]; then
               echo "--- Integration tests detected: verifying Docker ---"
               if docker info >/dev/null 2>&1; then
@@ -399,13 +401,13 @@ jobs:
             FUNC_RC=0
             INT_RC=0
             echo "=== Phase A: Unit tests ==="
-            mvn test -Dtest="!*FunctionalTest,!*IntegrationTest" -DfailIfNoTests=false || UNIT_RC=$?
+            mvn test -Dtest="!*FunctionalTest,!*IntegrationTest" -DfailIfNoTests=false 2>&1 | tee pr-agent-artifacts/mvn-unit.log || UNIT_RC=$?
             # Phase B: functional tests (*FunctionalTest)
             echo "=== Phase B: Functional tests ==="
-            mvn test -Dtest="*FunctionalTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>/dev/null || FUNC_RC=$?
+            mvn test -Dtest="*FunctionalTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-functional.log || FUNC_RC=$?
             # Phase C: integration tests (*IntegrationTest)
             echo "=== Phase C: Integration tests ==="
-            mvn test -Dtest="*IntegrationTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>/dev/null || INT_RC=$?
+            mvn test -Dtest="*IntegrationTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-integration.log || INT_RC=$?
             # Overall exit code: fail if unit tests failed (primary)
             if [ $UNIT_RC -ne 0 ]; then
               MVN_RC=$UNIT_RC
@@ -417,6 +419,11 @@ jobs:
             # Capture surefire error summary for self-heal callback
             if [ -d target/surefire-reports ]; then
               grep -h -A2 'FAILURE\|ERROR' target/surefire-reports/*.txt 2>/dev/null | head -200 > pr-agent-artifacts/surefire-errors.txt || true
+            fi
+            # Fallback: if no surefire reports and mvn failed, extract build errors from Maven log
+            if [ ! -d target/surefire-reports ] && [ $MVN_RC -ne 0 ]; then
+              tail -80 pr-agent-artifacts/mvn-unit.log > pr-agent-artifacts/surefire-errors.txt 2>/dev/null || true
+              echo "Maven build failed (exit $MVN_RC) before tests could run" >> pr-agent-artifacts/surefire-errors.txt
             fi
             # Collect JaCoCo coverage reports
             for JACOCO_PATH in target/site/jacoco/jacoco.xml target/jacoco.xml; do
