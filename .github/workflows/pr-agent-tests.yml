@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "46"
+  PR_AGENT_TEMPLATE_VERSION: "47"
 
 jobs:
   run-tests:
@@ -33,6 +33,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.head_sha }}
 
       - name: Parse detected stack
         id: stack
@@ -290,11 +292,12 @@ jobs:
             echo "--- pom.xml test dependencies ---"
             grep -B1 -A3 '<scope>test</scope>' pom.xml || echo "(no test-scoped deps)"
             echo "---"
-            # Create application-test.properties for H2 in-memory DB (used by @DataJpaTest / @SpringBootTest)
+            # Create application.properties in test resources to override main DB config for ALL tests.
+            # This ensures tests that don't use @ActiveProfiles("test") still get H2 instead of PostgreSQL/MySQL.
             TEST_PROPS_DIR="src/test/resources"
             mkdir -p "$TEST_PROPS_DIR"
-            if [ ! -f "$TEST_PROPS_DIR/application-test.properties" ]; then
-              cat > "$TEST_PROPS_DIR/application-test.properties" <<'H2PROPS'
+            if [ ! -f "$TEST_PROPS_DIR/application.properties" ]; then
+              cat > "$TEST_PROPS_DIR/application.properties" <<'H2PROPS'
           spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
           spring.datasource.driver-class-name=org.h2.Driver
           spring.datasource.username=sa
@@ -303,7 +306,12 @@ jobs:
           spring.jpa.hibernate.ddl-auto=create-drop
           spring.flyway.enabled=false
           H2PROPS
-              echo "Created application-test.properties with H2 datasource"
+              echo "Created src/test/resources/application.properties with H2 datasource"
+            fi
+            # Also create application-test.properties for tests using @ActiveProfiles("test")
+            if [ ! -f "$TEST_PROPS_DIR/application-test.properties" ]; then
+              cp "$TEST_PROPS_DIR/application.properties" "$TEST_PROPS_DIR/application-test.properties"
+              echo "Created application-test.properties (copy of H2 config)"
             fi
             # Docker verification for Testcontainers integration tests
             HAS_INTEGRATION=$(find src/test/java -name '*IntegrationTest.java' 2>/dev/null | head -1)
