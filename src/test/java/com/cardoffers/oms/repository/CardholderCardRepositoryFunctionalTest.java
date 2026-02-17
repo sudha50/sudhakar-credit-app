@@ -1,75 +1,87 @@
 package com.cardoffers.oms.repository;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import static org.assertj.core.api.Assertions.*;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 
-import javax.persistence.EntityManager;
-import javax.persistence.PersistenceContext;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 
 import com.cardoffers.oms.model.entity.CardholderCard;
 
 @DataJpaTest
-@Transactional
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @ActiveProfiles("test")
-public class CardholderCardRepositoryFunctionalTest {
+class CardholderCardRepositoryTest {
 
     @Autowired
-    private CardholderCardRepository cardholderCardRepository;
+    TestEntityManager entityManager;
 
-    @PersistenceContext
-    private EntityManager entityManager;
+    @Autowired
+    CardholderCardRepository cardholderCardRepository;
 
     @Test
-    public void shouldFindByCardholderId() {
-        CardholderCard card1 = new CardholderCard();
-        card1.setCardholderId(1L);
-        card1.setActive(true);
-        entityManager.persist(card1);
+    void shouldReturnEmptyList_whenNoCardholderCardsExist() {
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+        assertTrue(result.isEmpty());
+    }
 
-        CardholderCard card2 = new CardholderCard();
-        card2.setCardholderId(1L);
-        card2.setActive(false);
-        entityManager.persist(card2);
+    @Test
+    void shouldReturnCardholderCards_whenCardsExistForCardholder() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
+        entityManager.flush();
 
         List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
-
-        assertThat(result).hasSize(2);
-        assertThat(result).extracting("active").containsExactlyInAnyOrder(true, false);
+        assertFalse(result.isEmpty());
+        assertEquals(1, result.size());
+        assertEquals(1L, result.get(0).getCardholderId());
     }
 
     @Test
-    public void shouldFindByCardholderIdAndActiveTrue() {
-        CardholderCard card1 = new CardholderCard();
-        card1.setCardholderId(1L);
-        card1.setActive(true);
-        entityManager.persist(card1);
-
-        CardholderCard card2 = new CardholderCard();
-        card2.setCardholderId(1L);
-        card2.setActive(false);
-        entityManager.persist(card2);
+    void shouldReturnActiveCardholderCards_whenActiveCardsExistForCardholder() {
+        CardholderCard activeCard = new CardholderCard();
+        activeCard.setCardholderId(1L);
+        activeCard.setActive(true);
+        entityManager.persist(activeCard);
+        
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(1L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+        
+        entityManager.flush();
 
         List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
-
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).isActive()).isTrue();
+        assertFalse(result.isEmpty());
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isActive());
     }
 
     @Test
-    public void shouldReturnEmptyListForNonExistentCardholderId() {
-        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(999L);
+    void shouldReturnEmptyList_whenNoActiveCardsExistForCardholder() {
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(2L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+        entityManager.flush();
 
-        assertThat(result).isEmpty();
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void shouldHandleNullCardholderId_whenFindingCards() {
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(null);
+        assertTrue(result.isEmpty());
     }
 }

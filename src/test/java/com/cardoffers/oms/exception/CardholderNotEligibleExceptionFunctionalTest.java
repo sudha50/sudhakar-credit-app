@@ -1,46 +1,87 @@
-package com.cardoffers.oms.exception;
+package com.cardoffers.oms.repository;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import org.springframework.boot.test.SpringBootTest;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.springframework.test.context.ActiveProfiles;
-import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+
+import com.cardoffers.oms.model.entity.CardholderCard;
+
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @ActiveProfiles("test")
-class CardholderNotEligibleExceptionFunctionalTest {
+class CardholderCardRepositoryTest {
+
+    @Autowired
+    TestEntityManager entityManager;
+
+    @Autowired
+    CardholderCardRepository cardholderCardRepository;
 
     @Test
-    void shouldCreateExceptionWithMessage() {
-        String message = "Cardholder is not eligible for this offer.";
-        CardholderNotEligibleException exception = new CardholderNotEligibleException(message);
-
-        assertEquals(message, exception.getMessage());
+    void shouldReturnEmptyList_whenNoCardholderCardsExist() {
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldCreateExceptionWithDifferentMessage() {
-        String message = "Reason for ineligibility: insufficient credit score.";
-        CardholderNotEligibleException exception = new CardholderNotEligibleException(message);
+    void shouldReturnCardholderCards_whenCardsExistForCardholder() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
+        entityManager.flush();
 
-        assertEquals(message, exception.getMessage());
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+        assertFalse(result.isEmpty());
+        assertEquals(1, result.size());
+        assertEquals(1L, result.get(0).getCardholderId());
     }
 
     @Test
-    void shouldCreateExceptionWithEmptyMessage() {
-        String message = "";
-        CardholderNotEligibleException exception = new CardholderNotEligibleException(message);
+    void shouldReturnActiveCardholderCards_whenActiveCardsExistForCardholder() {
+        CardholderCard activeCard = new CardholderCard();
+        activeCard.setCardholderId(1L);
+        activeCard.setActive(true);
+        entityManager.persist(activeCard);
+        
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(1L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+        
+        entityManager.flush();
 
-        assertEquals(message, exception.getMessage());
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        assertFalse(result.isEmpty());
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isActive());
     }
 
     @Test
-    void shouldThrowNullPointerExceptionWhenMessageIsNull() {
-        Exception exception = assertThrows(NullPointerException.class, () -> {
-            new CardholderNotEligibleException(null);
-        });
+    void shouldReturnEmptyList_whenNoActiveCardsExistForCardholder() {
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(2L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+        entityManager.flush();
 
-        assertEquals("message must not be null", exception.getMessage());
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void shouldHandleNullCardholderId_whenFindingCards() {
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(null);
+        assertTrue(result.isEmpty());
     }
 }

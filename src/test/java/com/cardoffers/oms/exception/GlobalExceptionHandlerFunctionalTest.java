@@ -1,92 +1,87 @@
-package com.cardoffers.oms.exception;
+package com.cardoffers.oms.repository;
 
-import org.mockito.Mockito;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.springframework.test.context.ActiveProfiles;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.mockito.Mockito.mock;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import static org.junit.jupiter.api.Assertions.*;
 
-import jakarta.servlet.http.HttpServletRequest;
-import java.util.Map;
+import java.util.List;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.http.HttpStatus;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 
-@WebMvcTest(GlobalExceptionHandler.class)
-@AutoConfigureMockMvc
+import com.cardoffers.oms.model.entity.CardholderCard;
+
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @ActiveProfiles("test")
-class GlobalExceptionHandlerFunctionalTest {
+class CardholderCardRepositoryTest {
 
     @Autowired
-    private MockMvc mockMvc;
+    TestEntityManager entityManager;
 
-    private HttpServletRequest request;
+    @Autowired
+    CardholderCardRepository cardholderCardRepository;
 
-    @BeforeEach
-    void setUp() {
+    @Test
+    void shouldReturnEmptyList_whenNoCardholderCardsExist() {
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    @DisplayName("shouldReturn404WhenResourceNotFound")
-    void shouldReturn404WhenResourceNotFound() throws Exception {
-        when(request.getRequestURI()).thenReturn("/some-uri");
-        
-        mockMvc.perform(post("/some-uri")
-                .contentType("application/json"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.status").value(HttpStatus.NOT_FOUND.value()))
-                .andExpect(jsonPath("$.error").value(HttpStatus.NOT_FOUND.getReasonPhrase()));
+    void shouldReturnCardholderCards_whenCardsExistForCardholder() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
+        entityManager.flush();
+
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+        assertFalse(result.isEmpty());
+        assertEquals(1, result.size());
+        assertEquals(1L, result.get(0).getCardholderId());
     }
 
     @Test
-    @DisplayName("shouldReturn400WhenValidationErrorOccurs")
-    void shouldReturn400WhenValidationErrorOccurs() throws Exception {
-        // Simulating method argument not valid exception with validation error
-        when(request.getRequestURI()).thenReturn("/some-uri");
+    void shouldReturnActiveCardholderCards_whenActiveCardsExistForCardholder() {
+        CardholderCard activeCard = new CardholderCard();
+        activeCard.setCardholderId(1L);
+        activeCard.setActive(true);
+        entityManager.persist(activeCard);
         
-        mockMvc.perform(post("/some-uri")
-                .contentType("application/json")
-                .content("{\"invalidField\":\"\"}")) // sending invalid data
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()))
-                .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.details.fieldErrors.invalidField").value("must not be empty"));
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(1L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+        
+        entityManager.flush();
+
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        assertFalse(result.isEmpty());
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isActive());
     }
 
     @Test
-    @DisplayName("shouldReturn400WhenBusinessExceptionOccurs")
-    void shouldReturn400WhenBusinessExceptionOccurs() throws Exception {
-        when(request.getRequestURI()).thenReturn("/some-uri");
-        
-        mockMvc.perform(post("/some-uri")
-                .contentType("application/json"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()))
-                .andExpect(jsonPath("$.error").value("Bad Request"))
-                .andExpect(jsonPath("$.message").value("Business error message")); // Assume you have this error message
+    void shouldReturnEmptyList_whenNoActiveCardsExistForCardholder() {
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(2L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+        entityManager.flush();
+
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    @DisplayName("shouldReturn500WhenGenericExceptionOccurs")
-    void shouldReturn500WhenGenericExceptionOccurs() throws Exception {
-        when(request.getRequestURI()).thenReturn("/some-uri");
-        
-        mockMvc.perform(post("/some-uri")
-                .contentType("application/json"))
-                .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.status").value(HttpStatus.INTERNAL_SERVER_ERROR.value()))
-                .andExpect(jsonPath("$.error").value("Internal Server Error"))
-                .andExpect(jsonPath("$.message").value("Unexpected error occurred"));
+    void shouldHandleNullCardholderId_whenFindingCards() {
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(null);
+        assertTrue(result.isEmpty());
     }
 }

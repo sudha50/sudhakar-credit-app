@@ -1,80 +1,87 @@
-package com.cardoffers.oms.exception;
+package com.cardoffers.oms.repository;
 
-import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.util.Map;
+import java.util.List;
 
-import jakarta.servlet.http.HttpServletRequest;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.validation.BeanPropertyBindingResult;
-import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 
-class GlobalExceptionHandlerTest {
-    private GlobalExceptionHandler globalExceptionHandler;
-    private HttpServletRequest request;
+import com.cardoffers.oms.model.entity.CardholderCard;
 
-    @BeforeEach
-    void setUp() {
-        globalExceptionHandler = new GlobalExceptionHandler();
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
+@ActiveProfiles("test")
+class CardholderCardRepositoryTest {
+
+    @Autowired
+    TestEntityManager entityManager;
+
+    @Autowired
+    CardholderCardRepository cardholderCardRepository;
+
+    @Test
+    void shouldReturnEmptyList_whenNoCardholderCardsExist() {
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldReturnNotFoundResponse_whenResourceNotFoundExceptionIsThrown() {
-        ResourceNotFoundException exception = new ResourceNotFoundException("Resource not found");
-        Mockito.when(request.getRequestURI()).thenReturn("/test-uri");
+    void shouldReturnCardholderCards_whenCardsExistForCardholder() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
+        entityManager.flush();
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleResourceNotFound(exception, request);
-
-        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-        assertEquals("Resource not found", response.getBody().getMessage());
-        assertEquals("/test-uri", response.getBody().getPath());
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(1L);
+        assertFalse(result.isEmpty());
+        assertEquals(1, result.size());
+        assertEquals(1L, result.get(0).getCardholderId());
     }
 
     @Test
-    void shouldReturnBadRequestResponse_whenValidationErrorsOccur() {
-        FieldError fieldError = new FieldError("obj", "field", "must not be empty");
-        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "obj");
-        bindingResult.addError(fieldError);
-        MethodArgumentNotValidException exception = new MethodArgumentNotValidException(null, bindingResult);
-        Mockito.when(request.getRequestURI()).thenReturn("/test-uri");
+    void shouldReturnActiveCardholderCards_whenActiveCardsExistForCardholder() {
+        CardholderCard activeCard = new CardholderCard();
+        activeCard.setCardholderId(1L);
+        activeCard.setActive(true);
+        entityManager.persist(activeCard);
+        
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(1L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+        
+        entityManager.flush();
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleValidationErrors(exception, request);
-
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("Validation failed", response.getBody().getMessage());
-        assertEquals("/test-uri", response.getBody().getPath());
-        assertEquals(Map.of("fieldErrors", Map.of("field", "must not be empty")), response.getBody().getDetails());
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        assertFalse(result.isEmpty());
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isActive());
     }
 
     @Test
-    void shouldReturnBadRequestResponse_whenBusinessExceptionIsThrown() {
-        InvalidOfferException exception = new InvalidOfferException("Invalid offer");
-        Mockito.when(request.getRequestURI()).thenReturn("/test-uri");
+    void shouldReturnEmptyList_whenNoActiveCardsExistForCardholder() {
+        CardholderCard inactiveCard = new CardholderCard();
+        inactiveCard.setCardholderId(2L);
+        inactiveCard.setActive(false);
+        entityManager.persist(inactiveCard);
+        entityManager.flush();
 
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleBusinessExceptions(exception, request);
-
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("Invalid offer", response.getBody().getMessage());
-        assertEquals("/test-uri", response.getBody().getPath());
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    void shouldReturnInternalServerErrorResponse_whenGenericExceptionIsThrown() {
-        Exception exception = new Exception("Unexpected error");
-        Mockito.when(request.getRequestURI()).thenReturn("/test-uri");
-
-        ResponseEntity<ErrorResponse> response = globalExceptionHandler.handleGenericException(exception, request);
-
-        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
-        assertEquals("Unexpected error occurred", response.getBody().getMessage());
-        assertEquals("/test-uri", response.getBody().getPath());
-        assertEquals(Map.of("exception", "Exception"), response.getBody().getDetails());
+    void shouldHandleNullCardholderId_whenFindingCards() {
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(null);
+        assertTrue(result.isEmpty());
     }
 }

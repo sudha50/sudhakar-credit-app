@@ -78,4 +78,10 @@ class CardholderCardRepositoryTest {
         List<CardholderCard> result = cardholderCardRepository.findByCardholderIdAndActiveTrue(2L);
         assertTrue(result.isEmpty());
     }
+
+    @Test
+    void shouldHandleNullCardholderId_whenFindingCards() {
+        List<CardholderCard> result = cardholderCardRepository.findByCardholderId(null);
+        assertTrue(result.isEmpty());
+    }
 }
