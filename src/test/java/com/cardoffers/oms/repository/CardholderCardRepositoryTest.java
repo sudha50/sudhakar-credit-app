@@ -1,21 +1,15 @@
 package com.cardoffers.oms.repository;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 
+import com.cardoffers.oms.model.entity.CardholderCard;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.data.jdbc.DataJdbcTest;
+import org.springframework.boot.test.autoconfigure.data.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.test.context.ActiveProfiles;
-
-import com.cardoffers.oms.model.entity.CardholderCard;
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -23,10 +17,10 @@ import com.cardoffers.oms.model.entity.CardholderCard;
 class CardholderCardRepositoryTest {
 
     @Autowired
-    TestEntityManager entityManager;
+    private TestEntityManager entityManager;
 
     @Autowired
-    CardholderCardRepository cardholderCardRepository;
+    private CardholderCardRepository cardholderCardRepository;
 
     @Test
     void shouldReturnCards_whenCardholderIdIsGiven() {
@@ -34,9 +28,10 @@ class CardholderCardRepositoryTest {
         card.setCardholderId(1L);
         card.setActive(true);
         entityManager.persist(card);
-        
+        entityManager.flush();
+
         List<CardholderCard> cards = cardholderCardRepository.findByCardholderId(1L);
-        
+
         assertNotNull(cards);
         assertEquals(1, cards.size());
         assertEquals(1L, cards.get(0).getCardholderId());
@@ -54,6 +49,8 @@ class CardholderCardRepositoryTest {
         card2.setActive(false);
         entityManager.persist(card2);
         
+        entityManager.flush();
+
         List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
         
         assertNotNull(activeCards);
@@ -76,6 +73,8 @@ class CardholderCardRepositoryTest {
         card.setActive(false);
         entityManager.persist(card);
         
+        entityManager.flush();
+
         List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
         
         assertNotNull(activeCards);

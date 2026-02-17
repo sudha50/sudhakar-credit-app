@@ -1,79 +1,83 @@
-package com.cardoffers.oms.exception;
+package com.cardoffers.oms.repository;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.util.List;
 
+import com.cardoffers.oms.model.entity.CardholderCard;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.data.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.test.context.ActiveProfiles;
 
-public class ErrorResponseTest {
+@DataJpaTest
+@ActiveProfiles("test")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
+class CardholderCardRepositoryTest {
+
+    @Autowired
+    private TestEntityManager entityManager;
+
+    @Autowired
+    private CardholderCardRepository cardholderCardRepository;
 
     @Test
-    public void shouldCreateErrorResponse_whenAllFieldsProvided() {
-        ErrorResponse errorResponse = new ErrorResponse();
-        errorResponse.setTimestamp(LocalDateTime.now());
-        errorResponse.setStatus(404);
-        errorResponse.setError("Not Found");
-        errorResponse.setMessage("The requested resource was not found");
-        errorResponse.setPath("/api/resource");
-        errorResponse.setDetails(new HashMap<>());
+    void shouldReturnCards_whenCardholderIdIsGiven() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
+        entityManager.flush();
 
-        assertNotNull(errorResponse.getTimestamp());
-        assertEquals(404, errorResponse.getStatus());
-        assertEquals("Not Found", errorResponse.getError());
-        assertEquals("The requested resource was not found", errorResponse.getMessage());
-        assertEquals("/api/resource", errorResponse.getPath());
+        List<CardholderCard> cards = cardholderCardRepository.findByCardholderId(1L);
+
+        assertNotNull(cards);
+        assertEquals(1, cards.size());
+        assertEquals(1L, cards.get(0).getCardholderId());
     }
 
     @Test
-    public void shouldAllowEmptyDetails_whenCreatingErrorResponse() {
-        ErrorResponse errorResponse = new ErrorResponse();
-        errorResponse.setDetails(null);
+    void shouldReturnActiveCards_whenCardholderIdIsGiven() {
+        CardholderCard card1 = new CardholderCard();
+        card1.setCardholderId(1L);
+        card1.setActive(true);
+        entityManager.persist(card1);
+        
+        CardholderCard card2 = new CardholderCard();
+        card2.setCardholderId(1L);
+        card2.setActive(false);
+        entityManager.persist(card2);
+        
+        entityManager.flush();
 
-        assertNull(errorResponse.getDetails());
+        List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        
+        assertNotNull(activeCards);
+        assertEquals(1, activeCards.size());
+        assertTrue(activeCards.get(0).isActive());
     }
 
     @Test
-    public void shouldSetTimestamp_whenErrorResponseUpdated() {
-        ErrorResponse errorResponse = new ErrorResponse();
-        LocalDateTime now = LocalDateTime.now();
-        errorResponse.setTimestamp(now);
-
-        assertEquals(now, errorResponse.getTimestamp());
+    void shouldReturnEmptyList_whenNoCardsFoundForCardholderId() {
+        List<CardholderCard> cards = cardholderCardRepository.findByCardholderId(2L);
+        
+        assertNotNull(cards);
+        assertTrue(cards.isEmpty());
     }
 
     @Test
-    public void shouldSetStatus_whenErrorResponseUpdated() {
-        ErrorResponse errorResponse = new ErrorResponse();
-        errorResponse.setStatus(500);
+    void shouldReturnEmptyList_whenNoActiveCardsFoundForCardholderId() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(false);
+        entityManager.persist(card);
+        
+        entityManager.flush();
 
-        assertEquals(500, errorResponse.getStatus());
-    }
-
-    @Test
-    public void shouldSetError_whenErrorResponseUpdated() {
-        ErrorResponse errorResponse = new ErrorResponse();
-        errorResponse.setError("Internal Server Error");
-
-        assertEquals("Internal Server Error", errorResponse.getError());
-    }
-
-    @Test
-    public void shouldSetMessage_whenErrorResponseUpdated() {
-        ErrorResponse errorResponse = new ErrorResponse();
-        errorResponse.setMessage("An unexpected error occurred");
-
-        assertEquals("An unexpected error occurred", errorResponse.getMessage());
-    }
-
-    @Test
-    public void shouldSetPath_whenErrorResponseUpdated() {
-        ErrorResponse errorResponse = new ErrorResponse();
-        errorResponse.setPath("/api/error");
-
-        assertEquals("/api/error", errorResponse.getPath());
+        List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        
+        assertNotNull(activeCards);
+        assertTrue(activeCards.isEmpty());
     }
 }

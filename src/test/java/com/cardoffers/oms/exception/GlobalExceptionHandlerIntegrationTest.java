@@ -1,85 +1,83 @@
-package com.cardoffers.oms.exception;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.springframework.boot.test.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
+package com.cardoffers.oms.repository;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.http.HttpMethod.POST;
-import static org.springframework.http.MediaType.APPLICATION_JSON;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+import java.util.List;
+
+import com.cardoffers.oms.model.entity.CardholderCard;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.data.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.test.context.ActiveProfiles;
+
+@DataJpaTest
 @ActiveProfiles("test")
-public class GlobalExceptionHandlerIntegrationTest {
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
+class CardholderCardRepositoryTest {
 
     @Autowired
-    private TestRestTemplate restTemplate;
+    private TestEntityManager entityManager;
+
+    @Autowired
+    private CardholderCardRepository cardholderCardRepository;
 
     @Test
-    public void testHandleResourceNotFound() {
-        ResponseEntity<ErrorResponse> response = restTemplate.getForEntity("/api/non-existent-resource", ErrorResponse.class);
-        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-        assertEquals("Resource not found", response.getBody().getMessage());
-    }
+    void shouldReturnCards_whenCardholderIdIsGiven() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
+        entityManager.flush();
 
-    @Test
-    public void testHandleValidationErrors() {
-        CreateOfferRequest request = new CreateOfferRequest(); // assuming a DTO
-        request.setDescription(""); // assuming this field cannot be blank
-        
-        ResponseEntity<ErrorResponse> response = restTemplate.exchange(
-                "/api/offers", 
-                POST, 
-                new HttpEntity<>(request, null), 
-                ErrorResponse.class);
-        
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertTrue(response.getBody().getDetails().containsKey("fieldErrors"));
+        List<CardholderCard> cards = cardholderCardRepository.findByCardholderId(1L);
+
+        assertNotNull(cards);
+        assertEquals(1, cards.size());
+        assertEquals(1L, cards.get(0).getCardholderId());
     }
 
     @Test
-    public void testHandleBusinessExceptions() {
-        ResponseEntity<ErrorResponse> response = restTemplate.postForEntity(
-                "/api/offers", 
-                new InvalidOfferRequest(), 
-                ErrorResponse.class); // assuming InvalidOfferRequest triggers an InvalidOfferException
+    void shouldReturnActiveCards_whenCardholderIdIsGiven() {
+        CardholderCard card1 = new CardholderCard();
+        card1.setCardholderId(1L);
+        card1.setActive(true);
+        entityManager.persist(card1);
         
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        assertEquals("Invalid offer details", response.getBody().getMessage()); // assuming this is the error message
+        CardholderCard card2 = new CardholderCard();
+        card2.setCardholderId(1L);
+        card2.setActive(false);
+        entityManager.persist(card2);
+        
+        entityManager.flush();
+
+        List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        
+        assertNotNull(activeCards);
+        assertEquals(1, activeCards.size());
+        assertTrue(activeCards.get(0).isActive());
     }
 
     @Test
-    public void testHandleGenericException() {
-        // manually triggering a generic exception
-        ResponseEntity<ErrorResponse> response = restTemplate.getForEntity("/api/error", ErrorResponse.class); 
+    void shouldReturnEmptyList_whenNoCardsFoundForCardholderId() {
+        List<CardholderCard> cards = cardholderCardRepository.findByCardholderId(2L);
         
-        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
-        assertEquals("Unexpected error occurred", response.getBody().getMessage());
+        assertNotNull(cards);
+        assertTrue(cards.isEmpty());
     }
 
-    // Inner classes for the sake of example, these would correspond to your actual implementations
+    @Test
+    void shouldReturnEmptyList_whenNoActiveCardsFoundForCardholderId() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(false);
+        entityManager.persist(card);
+        
+        entityManager.flush();
 
-    public static class CreateOfferRequest {
-        @NotBlank
-        private String description;
-
-        public void setDescription(String description) {
-            this.description = description;
-        }
+        List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        
+        assertNotNull(activeCards);
+        assertTrue(activeCards.isEmpty());
     }
-    
-    public static class InvalidOfferRequest { }
-
 }

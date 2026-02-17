@@ -1,73 +1,83 @@
-package com.cardoffers.oms.mapper;
+package com.cardoffers.oms.repository;
 
-import org.mockito.Mockito;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Singleton;
+import java.util.List;
 
-import com.cardoffers.oms.model.dto.MerchantDTO;
-import com.cardoffers.oms.model.entity.Merchant;
-
-import org.junit.jupiter.api.BeforeEach;
+import com.cardoffers.oms.model.entity.CardholderCard;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.data.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.test.context.ActiveProfiles;
 
-@ExtendWith(MockitoExtension.class)
-class MerchantMapperTest {
+@DataJpaTest
+@ActiveProfiles("test")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
+class CardholderCardRepositoryTest {
 
-    @InjectMocks
-    private MerchantMapperImpl merchantMapper;
+    @Autowired
+    private TestEntityManager entityManager;
 
-    private Merchant merchant;
-    private MerchantDTO merchantDTO;
+    @Autowired
+    private CardholderCardRepository cardholderCardRepository;
 
-    @BeforeEach
-    void setUp() {
-        merchant = new Merchant();
-        merchant.setId(1L);
-        merchant.setName("Test Merchant");
-        merchant.setAddress("123 Test St");
+    @Test
+    void shouldReturnCards_whenCardholderIdIsGiven() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(true);
+        entityManager.persist(card);
+        entityManager.flush();
 
-        merchantDTO = new MerchantDTO();
-        merchantDTO.setId(1L);
-        merchantDTO.setName("Test Merchant");
-        merchantDTO.setAddress("123 Test St");
+        List<CardholderCard> cards = cardholderCardRepository.findByCardholderId(1L);
+
+        assertNotNull(cards);
+        assertEquals(1, cards.size());
+        assertEquals(1L, cards.get(0).getCardholderId());
     }
 
     @Test
-    void shouldConvertMerchantToDTO_whenCalled() {
-        MerchantDTO dto = merchantMapper.toDTO(merchant);
-        assertNotNull(dto);
-        assertEquals(merchant.getId(), dto.getId());
-        assertEquals(merchant.getName(), dto.getName());
-        assertEquals(merchant.getAddress(), dto.getAddress());
+    void shouldReturnActiveCards_whenCardholderIdIsGiven() {
+        CardholderCard card1 = new CardholderCard();
+        card1.setCardholderId(1L);
+        card1.setActive(true);
+        entityManager.persist(card1);
+        
+        CardholderCard card2 = new CardholderCard();
+        card2.setCardholderId(1L);
+        card2.setActive(false);
+        entityManager.persist(card2);
+        
+        entityManager.flush();
+
+        List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        
+        assertNotNull(activeCards);
+        assertEquals(1, activeCards.size());
+        assertTrue(activeCards.get(0).isActive());
     }
 
     @Test
-    void shouldConvertDTOToMerchant_whenCalled() {
-        Merchant entity = merchantMapper.toEntity(merchantDTO);
-        assertNotNull(entity);
-        assertEquals(merchantDTO.getId(), entity.getId());
-        assertEquals(merchantDTO.getName(), entity.getName());
-        assertEquals(merchantDTO.getAddress(), entity.getAddress());
+    void shouldReturnEmptyList_whenNoCardsFoundForCardholderId() {
+        List<CardholderCard> cards = cardholderCardRepository.findByCardholderId(2L);
+        
+        assertNotNull(cards);
+        assertTrue(cards.isEmpty());
     }
 
     @Test
-    void shouldReturnNull_whenMerchantIsNull() {
-        MerchantDTO dto = merchantMapper.toDTO(null);
-        assertNull(dto);
-    }
+    void shouldReturnEmptyList_whenNoActiveCardsFoundForCardholderId() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);
+        card.setActive(false);
+        entityManager.persist(card);
+        
+        entityManager.flush();
 
-    @Test
-    void shouldReturnNull_whenDTOIsNull() {
-        Merchant entity = merchantMapper.toEntity(null);
-        assertNull(entity);
+        List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        
+        assertNotNull(activeCards);
+        assertTrue(activeCards.isEmpty());
     }
 }
