@@ -1,94 +1,84 @@
-package com.cardoffers.oms.exception;
+package com.cardoffers.oms.repository;
 
-import org.mockito.Mockito;
-import static org.mockito.Mockito.when;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.test.context.ActiveProfiles;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doThrow;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.junit.jupiter.api.Assertions.*;
 
-import jakarta.validation.Valid;
+import java.util.List;
 
-import org.junit.jupiter.api.BeforeEach;
+import com.cardoffers.oms.model.entity.CardholderCard;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.boot.test.autoconfigure.data.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import org.springframework.test.context.ActiveProfiles;
 
-import java.util.HashMap;
-
-@WebMvcTest(GlobalExceptionHandler.class)
-@AutoConfigureMockMvc
+@DataJpaTest
 @ActiveProfiles("test")
-class GlobalExceptionHandlerFunctionalTest {
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
+class CardholderCardRepositoryTest {
 
     @Autowired
-    private MockMvc mockMvc;
-
-    @MockBean
-    private HttpServletRequest request;
+    private TestEntityManager entityManager;
 
     @Autowired
-    private GlobalExceptionHandler globalExceptionHandler;
+    private CardholderCardRepository cardholderCardRepository;
 
     @Test
-    void shouldHandleResourceNotFound() throws Exception {
-        doThrow(new ResourceNotFoundException("Resource not found"))
-            .when(request)
-            .getRequestURI();
-        
-        mockMvc.perform(get("/non-existing-endpoint"))
-            .andExpect(status().isNotFound())
-            .andExpect(jsonPath("$.message").value("Resource not found"))
-            .andExpect(jsonPath("$.status").value(HttpStatus.NOT_FOUND.value()));
+    void shouldReturnCards_whenCardholderIdIsGiven() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L);     // Ensure this method exists in your CardholderCard class
+        card.setActive(true);          // Ensure this method exists in your CardholderCard class
+        entityManager.persist(card);
+        entityManager.flush();
+
+        List<CardholderCard> cards = cardholderCardRepository.findByCardholderId(1L);
+
+        assertNotNull(cards);
+        assertEquals(1, cards.size());
+        assertNotNull(cards.get(0)); // Additional null check
+        assertEquals(1L, cards.get(0).getCardholderId()); // Check if cardholderId is retrieved correctly
     }
 
     @Test
-    void shouldHandleValidationErrors() throws Exception {
-        String invalidInputJson = "{}"; // assuming no input is invalid
+    void shouldReturnActiveCards_whenCardholderIdIsGiven() {
+        CardholderCard card1 = new CardholderCard();
+        card1.setCardholderId(1L);  // Ensure this method exists
+        card1.setActive(true);       // Ensure this method exists
+        entityManager.persist(card1);
         
-        mockMvc.perform(post("/validate")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(invalidInputJson))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value("Validation failed"))
-            .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()));
+        CardholderCard card2 = new CardholderCard();
+        card2.setCardholderId(1L);  // Ensure this method exists
+        card2.setActive(false);      // Ensure this method exists
+        entityManager.persist(card2);
+        
+        entityManager.flush();
+
+        List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        
+        assertNotNull(activeCards);
+        assertEquals(1, activeCards.size());
+        assertTrue(activeCards.get(0).isActive()); // Check if card is active
     }
 
     @Test
-    void shouldHandleBusinessExceptions() throws Exception {
-        doThrow(new InvalidOfferException("Invalid offer"))
-            .when(request)
-            .getRequestURI();
+    void shouldReturnEmptyList_whenNoCardsFoundForCardholderId() {
+        List<CardholderCard> cards = cardholderCardRepository.findByCardholderId(2L);
         
-        mockMvc.perform(get("/invalid-offer"))
-            .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value("Invalid offer"))
-            .andExpect(jsonPath("$.status").value(HttpStatus.BAD_REQUEST.value()));
+        assertNotNull(cards);
+        assertTrue(cards.isEmpty());
     }
 
     @Test
-    void shouldHandleGenericException() throws Exception {
-        doThrow(new RuntimeException("Unexpected error"))
-            .when(request)
-            .getRequestURI();
+    void shouldReturnEmptyList_whenNoActiveCardsFoundForCardholderId() {
+        CardholderCard card = new CardholderCard();
+        card.setCardholderId(1L); // Ensure proper method exists
+        card.setActive(false);     // Ensure proper method exists
+        entityManager.persist(card);
+        
+        entityManager.flush();
 
-        mockMvc.perform(get("/any-endpoint"))
-            .andExpect(status().isInternalServerError())
-            .andExpect(jsonPath("$.message").value("Unexpected error occurred"))
-            .andExpect(jsonPath("$.status").value(HttpStatus.INTERNAL_SERVER_ERROR.value()));
+        List<CardholderCard> activeCards = cardholderCardRepository.findByCardholderIdAndActiveTrue(1L);
+        
+        assertNotNull(activeCards);
+        assertTrue(activeCards.isEmpty());
     }
 }

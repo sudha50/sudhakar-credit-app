@@ -25,8 +25,8 @@ class CardholderCardRepositoryTest {
     @Test
     void shouldReturnCards_whenCardholderIdIsGiven() {
         CardholderCard card = new CardholderCard();
-        card.setCardholderId(1L);
-        card.setActive(true);
+        card.setCardholderId(1L);     // Ensure this method exists in your CardholderCard class
+        card.setActive(true);          // Ensure this method exists in your CardholderCard class
         entityManager.persist(card);
         entityManager.flush();
 
@@ -34,19 +34,20 @@ class CardholderCardRepositoryTest {
 
         assertNotNull(cards);
         assertEquals(1, cards.size());
-        assertEquals(1L, cards.get(0).getCardholderId());
+        assertNotNull(cards.get(0)); // Additional null check
+        assertEquals(1L, cards.get(0).getCardholderId()); // Check if cardholderId is retrieved correctly
     }
 
     @Test
     void shouldReturnActiveCards_whenCardholderIdIsGiven() {
         CardholderCard card1 = new CardholderCard();
-        card1.setCardholderId(1L);
-        card1.setActive(true);
+        card1.setCardholderId(1L);  // Ensure this method exists
+        card1.setActive(true);       // Ensure this method exists
         entityManager.persist(card1);
         
         CardholderCard card2 = new CardholderCard();
-        card2.setCardholderId(1L);
-        card2.setActive(false);
+        card2.setCardholderId(1L);  // Ensure this method exists
+        card2.setActive(false);      // Ensure this method exists
         entityManager.persist(card2);
         
         entityManager.flush();
@@ -55,7 +56,7 @@ class CardholderCardRepositoryTest {
         
         assertNotNull(activeCards);
         assertEquals(1, activeCards.size());
-        assertTrue(activeCards.get(0).isActive());
+        assertTrue(activeCards.get(0).isActive()); // Check if card is active
     }
 
     @Test
@@ -69,8 +70,8 @@ class CardholderCardRepositoryTest {
     @Test
     void shouldReturnEmptyList_whenNoActiveCardsFoundForCardholderId() {
         CardholderCard card = new CardholderCard();
-        card.setCardholderId(1L);
-        card.setActive(false);
+        card.setCardholderId(1L); // Ensure proper method exists
+        card.setActive(false);     // Ensure proper method exists
         entityManager.persist(card);
         
         entityManager.flush();
