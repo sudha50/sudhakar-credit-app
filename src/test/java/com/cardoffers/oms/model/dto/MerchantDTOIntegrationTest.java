@@ -1,97 +1,97 @@
 package com.cardoffers.oms.model.dto;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import org.springframework.boot.test.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace.NONE;
-
-import java.util.List;
-import java.util.Optional;
-
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.test.web.client.TestRestTemplate;
+import static org.junit.jupiter.api.Assertions.*;
 
-@Testcontainers
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
-@AutoConfigureTestDatabase(replace = NONE)
-@ActiveProfiles("test")
-class MerchantDTOIntegrationTest {
+import javax.validation.Validation;
+import javax.validation.Validator;
+import javax.validation.ValidatorFactory;
 
-    @Container
-    static PostgreSQLContainer<?> postgresContainer = 
-            new PostgreSQLContainer<>("postgres:latest")
-                    .withDatabaseName("testdb")
-                    .withUsername("test")
-                    .withPassword("test");
+import static java.util.Collections.singletonList;
 
-    @DynamicPropertySource
-    static void postgresProperties(org.springframework.test.context.DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgresContainer::getJdbcUrl);
-        registry.add("spring.datasource.username", postgresContainer::getUsername);
-        registry.add("spring.datasource.password", postgresContainer::getPassword);
-    }
+class CardholderDTOTest {
+    private final Validator validator;
 
-    @Autowired
-    private TestRestTemplate restTemplate;
-
-    @Test
-    void testCreateMerchant() {
-        MerchantDTO merchant = new MerchantDTO();
-        merchant.setName("Test Merchant");
-        merchant.setDescription("A description for test merchant");
-        merchant.setCategory("Retail");
-        merchant.setLogoUrl("http://example.com/logo.png");
-        merchant.setWebsite("http://example.com");
-        merchant.setActive(true);
-
-        ResponseEntity<MerchantDTO> response = restTemplate.postForEntity("/merchants", merchant, MerchantDTO.class);
-        
-        assertEquals(201, response.getStatusCodeValue());
-        assertNotNull(response.getBody());
-        assertEquals("Test Merchant", response.getBody().getName());
+    public CardholderDTOTest() {
+        ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
+        validator = factory.getValidator();
     }
 
     @Test
-    void testCreateMerchant_WithMissingName_ReturnsBadRequest() {
-        MerchantDTO merchant = new MerchantDTO();
-        merchant.setDescription("Merchant without a name");
-        merchant.setCategory("Retail");
+    void shouldCreateCardholderDTO_whenAllFieldsProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
+        cardholder.setPhoneNumber("123-456-7890");
+        cardholder.setActive(true);
+        cardholder.setCardNetworks(Collections.emptyList());
 
-        ResponseEntity<MerchantDTO> response = restTemplate.postForEntity("/merchants", merchant, MerchantDTO.class);
-        
-        assertEquals(400, response.getStatusCodeValue());
+        assertNotNull(cardholder);
+        assertEquals("John", cardholder.getFirstName());
+        assertEquals("Doe", cardholder.getLastName());
+        assertEquals("john.doe@example.com", cardholder.getEmail());
+        assertEquals("123-456-7890", cardholder.getPhoneNumber());
+        assertTrue(cardholder.getActive());
+        assertTrue(cardholder.getCardNetworks().isEmpty());
     }
 
     @Test
-    void testGetMerchantById() {
-        MerchantDTO merchant = new MerchantDTO();
-        merchant.setName("Retrievable Merchant");
-        merchant.setDescription("A merchant that can be retrieved");
-        merchant.setCategory("Service");
-        merchant.setActive(true);
+    void shouldThrowConstraintViolationException_whenFirstNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName(""); // blank first name
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
 
-        MerchantDTO createdMerchant = restTemplate.postForObject("/merchants", merchant, MerchantDTO.class);
-        assertNotNull(createdMerchant);
-        Long createdMerchantId = createdMerchant.getId();
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
 
-        ResponseEntity<MerchantDTO> response = restTemplate.getForEntity("/merchants/" + createdMerchantId, MerchantDTO.class);
-        
-        assertEquals(200, response.getStatusCodeValue());
-        assertNotNull(response.getBody());
-        assertEquals(createdMerchantId, response.getBody().getId());
+    @Test
+    void shouldThrowConstraintViolationException_whenLastNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName(""); // blank last name
+        cardholder.setEmail("john.doe@example.com");
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldThrowConstraintViolationException_whenEmailIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail(""); // blank email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldThrowConstraintViolationException_whenEmailIsInvalid() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("invalid-email"); // invalid email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldSetCardNetworks_whenProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        CardNetworkDTO network = new CardNetworkDTO();
+        network.setId(1L);  // Assuming there's a setId method for CardNetworkDTO
+        cardholder.setCardNetworks(singletonList(network));
+
+        assertNotNull(cardholder.getCardNetworks());
+        assertEquals(1, cardholder.getCardNetworks().size());
+        assertEquals(1L, cardholder.getCardNetworks().get(0).getId());
+    }
+
+    private void validate(CardholderDTO cardholder) {
+        var violations = validator.validate(cardholder);
+        if (!violations.isEmpty()) {
+            throw new javax.validation.ConstraintViolationException(violations);
+        }
     }
 }

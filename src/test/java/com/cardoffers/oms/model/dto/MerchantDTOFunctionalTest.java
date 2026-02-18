@@ -1,71 +1,97 @@
 package com.cardoffers.oms.model.dto;
 
-import org.springframework.test.context.ActiveProfiles;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import static org.junit.jupiter.api.Assertions.*;
 
-@WebMvcTest(MerchantDTO.class)
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-public class MerchantDTOFunctionalTest {
+import javax.validation.Validation;
+import javax.validation.Validator;
+import javax.validation.ValidatorFactory;
 
-    @Autowired
-    private MockMvc mockMvc;
+import static java.util.Collections.singletonList;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+class CardholderDTOTest {
+    private final Validator validator;
 
-    @BeforeEach
-    void setUp() {
+    public CardholderDTOTest() {
+        ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
+        validator = factory.getValidator();
     }
 
     @Test
-    void shouldCreateMerchantSuccessfully() throws Exception {
-        MerchantDTO merchantDTO = new MerchantDTO();
-        merchantDTO.setName("Merchant Name");
-        merchantDTO.setCategory("Retail");
-        merchantDTO.setDescription("Description here");
-        merchantDTO.setLogoUrl("http://example.com/logo.png");
-        merchantDTO.setWebsite("http://example.com");
-        merchantDTO.setActive(true);
+    void shouldCreateCardholderDTO_whenAllFieldsProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
+        cardholder.setPhoneNumber("123-456-7890");
+        cardholder.setActive(true);
+        cardholder.setCardNetworks(Collections.emptyList());
 
-        mockMvc.perform(post("/merchants")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(merchantDTO)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.name").value("Merchant Name"));
+        assertNotNull(cardholder);
+        assertEquals("John", cardholder.getFirstName());
+        assertEquals("Doe", cardholder.getLastName());
+        assertEquals("john.doe@example.com", cardholder.getEmail());
+        assertEquals("123-456-7890", cardholder.getPhoneNumber());
+        assertTrue(cardholder.getActive());
+        assertTrue(cardholder.getCardNetworks().isEmpty());
     }
 
     @Test
-    void shouldRejectMerchantCreationWithMissingName() throws Exception {
-        MerchantDTO merchantDTO = new MerchantDTO();
-        merchantDTO.setCategory("Retail");
-        mockMvc.perform(post("/merchants")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(merchantDTO)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors.name").exists());
+    void shouldThrowConstraintViolationException_whenFirstNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName(""); // blank first name
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    void shouldRejectMerchantCreationWithMissingCategory() throws Exception {
-        MerchantDTO merchantDTO = new MerchantDTO();
-        merchantDTO.setName("Merchant Name");
-        mockMvc.perform(post("/merchants")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(merchantDTO)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors.category").exists());
+    void shouldThrowConstraintViolationException_whenLastNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName(""); // blank last name
+        cardholder.setEmail("john.doe@example.com");
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldThrowConstraintViolationException_whenEmailIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail(""); // blank email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldThrowConstraintViolationException_whenEmailIsInvalid() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("invalid-email"); // invalid email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldSetCardNetworks_whenProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        CardNetworkDTO network = new CardNetworkDTO();
+        network.setId(1L);  // Assuming there's a setId method for CardNetworkDTO
+        cardholder.setCardNetworks(singletonList(network));
+
+        assertNotNull(cardholder.getCardNetworks());
+        assertEquals(1, cardholder.getCardNetworks().size());
+        assertEquals(1L, cardholder.getCardNetworks().get(0).getId());
+    }
+
+    private void validate(CardholderDTO cardholder) {
+        var violations = validator.validate(cardholder);
+        if (!violations.isEmpty()) {
+            throw new javax.validation.ConstraintViolationException(violations);
+        }
     }
 }

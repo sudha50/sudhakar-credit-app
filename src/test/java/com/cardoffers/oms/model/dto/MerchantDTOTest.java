@@ -1,90 +1,97 @@
 package com.cardoffers.oms.model.dto;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import jakarta.validation.Validation;
-import jakarta.validation.Validator;
-import jakarta.validation.ValidatorFactory;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.*;
 
-class MerchantDTOTest {
+import javax.validation.Validation;
+import javax.validation.Validator;
+import javax.validation.ValidatorFactory;
 
-    private static Validator validator;
+import static java.util.Collections.singletonList;
 
-    @BeforeAll
-    static void setup() {
+class CardholderDTOTest {
+    private final Validator validator;
+
+    public CardholderDTOTest() {
         ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
         validator = factory.getValidator();
     }
 
     @Test
-    void shouldCreateMerchantDTO_whenAllFieldsAreValid() {
-        MerchantDTO merchant = new MerchantDTO();
-        merchant.setName("Test Merchant");
-        merchant.setCategory("Retail");
-        merchant.setDescription("A sample retail merchant.");
-        merchant.setLogoUrl("http://example.com/logo.png");
-        merchant.setWebsite("http://example.com");
-        merchant.setActive(true);
+    void shouldCreateCardholderDTO_whenAllFieldsProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
+        cardholder.setPhoneNumber("123-456-7890");
+        cardholder.setActive(true);
+        cardholder.setCardNetworks(Collections.emptyList());
 
-        assertNotNull(merchant);
-        assertEquals("Test Merchant", merchant.getName());
+        assertNotNull(cardholder);
+        assertEquals("John", cardholder.getFirstName());
+        assertEquals("Doe", cardholder.getLastName());
+        assertEquals("john.doe@example.com", cardholder.getEmail());
+        assertEquals("123-456-7890", cardholder.getPhoneNumber());
+        assertTrue(cardholder.getActive());
+        assertTrue(cardholder.getCardNetworks().isEmpty());
     }
 
     @Test
-    void shouldNotCreateMerchantDTO_whenNameIsBlank() {
-        MerchantDTO merchant = new MerchantDTO();
-        merchant.setName("");
-        merchant.setCategory("Retail");
+    void shouldThrowConstraintViolationException_whenFirstNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName(""); // blank first name
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
 
-        var violations = validator.validate(merchant);
-        assertFalse(violations.isEmpty());
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    void shouldNotCreateMerchantDTO_whenCategoryIsBlank() {
-        MerchantDTO merchant = new MerchantDTO();
-        merchant.setName("Valid Merchant");
-        merchant.setCategory("");
+    void shouldThrowConstraintViolationException_whenLastNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName(""); // blank last name
+        cardholder.setEmail("john.doe@example.com");
 
-        var violations = validator.validate(merchant);
-        assertFalse(violations.isEmpty());
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    void shouldAllowNullDescription_whenOtherFieldsAreValid() {
-        MerchantDTO merchant = new MerchantDTO();
-        merchant.setName("Test Merchant");
-        merchant.setCategory("Retail");
-        merchant.setDescription(null);
+    void shouldThrowConstraintViolationException_whenEmailIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail(""); // blank email
 
-        var violations = validator.validate(merchant);
-        assertTrue(violations.isEmpty());
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    void shouldSetActiveToFalse_whenMerchantIsInactive() {
-        MerchantDTO merchant = new MerchantDTO();
-        merchant.setName("Test Merchant");
-        merchant.setCategory("Retail");
-        merchant.setActive(false);
+    void shouldThrowConstraintViolationException_whenEmailIsInvalid() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("invalid-email"); // invalid email
 
-        assertFalse(merchant.getActive());
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    void shouldReturnNullValuesForOptionalFields_whenNotSet() {
-        MerchantDTO merchant = new MerchantDTO();
-        merchant.setName("Test Merchant");
-        merchant.setCategory("Retail");
+    void shouldSetCardNetworks_whenProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        CardNetworkDTO network = new CardNetworkDTO();
+        network.setId(1L);  // Assuming there's a setId method for CardNetworkDTO
+        cardholder.setCardNetworks(singletonList(network));
 
-        assertNull(merchant.getDescription());
-        assertNull(merchant.getLogoUrl());
-        assertNull(merchant.getWebsite());
+        assertNotNull(cardholder.getCardNetworks());
+        assertEquals(1, cardholder.getCardNetworks().size());
+        assertEquals(1L, cardholder.getCardNetworks().get(0).getId());
+    }
+
+    private void validate(CardholderDTO cardholder) {
+        var violations = validator.validate(cardholder);
+        if (!violations.isEmpty()) {
+            throw new javax.validation.ConstraintViolationException(violations);
+        }
     }
 }

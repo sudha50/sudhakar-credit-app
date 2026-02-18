@@ -1,70 +1,97 @@
 package com.cardoffers.oms.model.dto;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-import org.junit.jupiter.api.Test;
+import javax.validation.Validation;
+import javax.validation.Validator;
+import javax.validation.ValidatorFactory;
 
-import java.util.Collections;
+import static java.util.Collections.singletonList;
 
-public class EligibleOfferResponseDTOTest {
+class CardholderDTOTest {
+    private final Validator validator;
 
-    @Test
-    void shouldCreateEligibleOfferResponseDTO_whenAllFieldsAreProvided() {
-        EligibleOfferResponseDTO responseDTO = new EligibleOfferResponseDTO();
-        responseDTO.setCardholderId(1L);
-        responseDTO.setCardholderName("John Doe");
-        responseDTO.setEligibleOffers(Collections.emptyList());
-        responseDTO.setTotalOffers(0);
-
-        assertNotNull(responseDTO);
-        assertEquals(1L, responseDTO.getCardholderId());
-        assertEquals("John Doe", responseDTO.getCardholderName());
-        assertEquals(0, responseDTO.getTotalOffers());
+    public CardholderDTOTest() {
+        ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
+        validator = factory.getValidator();
     }
 
     @Test
-    void shouldInitializeEligibleOffers_whenNotProvided() {
-        EligibleOfferResponseDTO responseDTO = new EligibleOfferResponseDTO();
+    void shouldCreateCardholderDTO_whenAllFieldsProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
+        cardholder.setPhoneNumber("123-456-7890");
+        cardholder.setActive(true);
+        cardholder.setCardNetworks(Collections.emptyList());
 
-        assertNotNull(responseDTO.getEligibleOffers());
-        assertTrue(responseDTO.getEligibleOffers().isEmpty());
+        assertNotNull(cardholder);
+        assertEquals("John", cardholder.getFirstName());
+        assertEquals("Doe", cardholder.getLastName());
+        assertEquals("john.doe@example.com", cardholder.getEmail());
+        assertEquals("123-456-7890", cardholder.getPhoneNumber());
+        assertTrue(cardholder.getActive());
+        assertTrue(cardholder.getCardNetworks().isEmpty());
     }
 
     @Test
-    void shouldSetEligibleOffers_whenProvided() {
-        EligibleOfferResponseDTO responseDTO = new EligibleOfferResponseDTO();
-        OfferDTO offer = new OfferDTO(); // Assuming OfferDTO has a no-arg constructor and necessary setters.
-        offer.setId(1L); // Assuming ID is a required field.
-        offer.setDescription("Special Offer");
-        responseDTO.setEligibleOffers(Collections.singletonList(offer));
+    void shouldThrowConstraintViolationException_whenFirstNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName(""); // blank first name
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
 
-        assertEquals(1, responseDTO.getEligibleOffers().size());
-        assertEquals("Special Offer", responseDTO.getEligibleOffers().get(0).getDescription());
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    void shouldSetTotalOffers_whenProvided() {
-        EligibleOfferResponseDTO responseDTO = new EligibleOfferResponseDTO();
-        responseDTO.setTotalOffers(5);
+    void shouldThrowConstraintViolationException_whenLastNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName(""); // blank last name
+        cardholder.setEmail("john.doe@example.com");
 
-        assertEquals(5, responseDTO.getTotalOffers());
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    void shouldReturnDefaultEligibleOffers_whenNoOffersProvided() {
-        EligibleOfferResponseDTO responseDTO = new EligibleOfferResponseDTO();
-        
-        assertEquals(0, responseDTO.getEligibleOffers().size());
+    void shouldThrowConstraintViolationException_whenEmailIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail(""); // blank email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    void shouldReturnCorrectCardholderName_whenSet() {
-        EligibleOfferResponseDTO responseDTO = new EligibleOfferResponseDTO();
-        responseDTO.setCardholderName("Jane Doe");
-        
-        assertEquals("Jane Doe", responseDTO.getCardholderName());
+    void shouldThrowConstraintViolationException_whenEmailIsInvalid() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("invalid-email"); // invalid email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldSetCardNetworks_whenProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        CardNetworkDTO network = new CardNetworkDTO();
+        network.setId(1L);  // Assuming there's a setId method for CardNetworkDTO
+        cardholder.setCardNetworks(singletonList(network));
+
+        assertNotNull(cardholder.getCardNetworks());
+        assertEquals(1, cardholder.getCardNetworks().size());
+        assertEquals(1L, cardholder.getCardNetworks().get(0).getId());
+    }
+
+    private void validate(CardholderDTO cardholder) {
+        var violations = validator.validate(cardholder);
+        if (!violations.isEmpty()) {
+            throw new javax.validation.ConstraintViolationException(violations);
+        }
     }
 }

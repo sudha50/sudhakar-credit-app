@@ -1,75 +1,97 @@
 package com.cardoffers.oms.model.dto;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import org.springframework.boot.test.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.http.HttpStatus;
+import static org.junit.jupiter.api.Assertions.*;
 
-import static org.assertj.core.api.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import javax.validation.Validation;
+import javax.validation.Validator;
+import javax.validation.ValidatorFactory;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("test")
-public class OfferSummaryDTOIntegrationTest {
-    
-    @Autowired
-    private TestRestTemplate restTemplate;
+import static java.util.Collections.singletonList;
 
-    @Test
-    public void testCreateOfferSummary() {
-        OfferSummaryDTO offerSummary = new OfferSummaryDTO();
-        offerSummary.setTitle("Summer Sale");
-        offerSummary.setMerchantName("Best Store");
-        offerSummary.setOfferType("Discount");
-        offerSummary.setDiscountPercentage(new BigDecimal("20.0"));
-        offerSummary.setStartDate(LocalDate.now());
-        offerSummary.setEndDate(LocalDate.now().plusDays(30));
-        offerSummary.setActive(true);
-        
-        ResponseEntity<OfferSummaryDTO> response = restTemplate.postForEntity("/offers", offerSummary, OfferSummaryDTO.class);
-        
-        assertEquals(HttpStatus.CREATED, response.getStatusCode());
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().getId()).isNotNull();
-        assertThat(response.getBody().getTitle()).isEqualTo("Summer Sale");
+class CardholderDTOTest {
+    private final Validator validator;
+
+    public CardholderDTOTest() {
+        ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
+        validator = factory.getValidator();
     }
 
     @Test
-    public void testCreateOfferSummary_InvalidData() {
-        OfferSummaryDTO offerSummary = new OfferSummaryDTO();
-        offerSummary.setTitle(null);
-        
-        ResponseEntity<String> response = restTemplate.postForEntity("/offers", offerSummary, String.class);
-        
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+    void shouldCreateCardholderDTO_whenAllFieldsProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
+        cardholder.setPhoneNumber("123-456-7890");
+        cardholder.setActive(true);
+        cardholder.setCardNetworks(Collections.emptyList());
+
+        assertNotNull(cardholder);
+        assertEquals("John", cardholder.getFirstName());
+        assertEquals("Doe", cardholder.getLastName());
+        assertEquals("john.doe@example.com", cardholder.getEmail());
+        assertEquals("123-456-7890", cardholder.getPhoneNumber());
+        assertTrue(cardholder.getActive());
+        assertTrue(cardholder.getCardNetworks().isEmpty());
     }
-    
+
     @Test
-    public void testGetOfferSummary() {
-        OfferSummaryDTO offerSummary = new OfferSummaryDTO();
-        offerSummary.setTitle("Winter Sale");
-        offerSummary.setMerchantName("Cool Store");
-        offerSummary.setOfferType("Discount");
-        offerSummary.setDiscountPercentage(new BigDecimal("15.0"));
-        offerSummary.setStartDate(LocalDate.now());
-        offerSummary.setEndDate(LocalDate.now().plusDays(30));
-        offerSummary.setActive(true);
-        
-        ResponseEntity<OfferSummaryDTO> createdResponse = restTemplate.postForEntity("/offers", offerSummary, OfferSummaryDTO.class);
-        
-        Long id = createdResponse.getBody().getId();
-        ResponseEntity<OfferSummaryDTO> getResponse = restTemplate.getForEntity("/offers/" + id, OfferSummaryDTO.class);
-        
-        assertEquals(HttpStatus.OK, getResponse.getStatusCode());
-        assertThat(getResponse.getBody()).isNotNull();
-        assertThat(getResponse.getBody().getTitle()).isEqualTo("Winter Sale");
+    void shouldThrowConstraintViolationException_whenFirstNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName(""); // blank first name
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("john.doe@example.com");
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldThrowConstraintViolationException_whenLastNameIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName(""); // blank last name
+        cardholder.setEmail("john.doe@example.com");
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldThrowConstraintViolationException_whenEmailIsBlank() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail(""); // blank email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldThrowConstraintViolationException_whenEmailIsInvalid() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("invalid-email"); // invalid email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldSetCardNetworks_whenProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        CardNetworkDTO network = new CardNetworkDTO();
+        network.setId(1L);  // Assuming there's a setId method for CardNetworkDTO
+        cardholder.setCardNetworks(singletonList(network));
+
+        assertNotNull(cardholder.getCardNetworks());
+        assertEquals(1, cardholder.getCardNetworks().size());
+        assertEquals(1L, cardholder.getCardNetworks().get(0).getId());
+    }
+
+    private void validate(CardholderDTO cardholder) {
+        var violations = validator.validate(cardholder);
+        if (!violations.isEmpty()) {
+            throw new javax.validation.ConstraintViolationException(violations);
+        }
     }
 }

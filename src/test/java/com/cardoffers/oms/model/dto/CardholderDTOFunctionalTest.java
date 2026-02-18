@@ -1,33 +1,24 @@
 package com.cardoffers.oms.model.dto;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import org.springframework.boot.test.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
-import jakarta.validation.Validation;
-import jakarta.validation.Validator;
-import jakarta.validation.ValidatorFactory;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import java.util.Collections;
-
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest
-@ActiveProfiles("test")
-public class CardholderDTOFunctionalTest {
+import javax.validation.Validation;
+import javax.validation.Validator;
+import javax.validation.ValidatorFactory;
 
-    private Validator validator;
+import static java.util.Collections.singletonList;
 
-    @BeforeEach
-    public void setUp() {
+class CardholderDTOTest {
+    private final Validator validator;
+
+    public CardholderDTOTest() {
         ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
         validator = factory.getValidator();
     }
 
     @Test
-    public void shouldCreateCardholderDTOWithValidFields() {
+    void shouldCreateCardholderDTO_whenAllFieldsProvided() {
         CardholderDTO cardholder = new CardholderDTO();
         cardholder.setFirstName("John");
         cardholder.setLastName("Doe");
@@ -36,51 +27,71 @@ public class CardholderDTOFunctionalTest {
         cardholder.setActive(true);
         cardholder.setCardNetworks(Collections.emptyList());
 
-        var violations = validator.validate(cardholder);
-        assertTrue(violations.isEmpty(), "CardholderDTO should be valid");
+        assertNotNull(cardholder);
+        assertEquals("John", cardholder.getFirstName());
+        assertEquals("Doe", cardholder.getLastName());
+        assertEquals("john.doe@example.com", cardholder.getEmail());
+        assertEquals("123-456-7890", cardholder.getPhoneNumber());
+        assertTrue(cardholder.getActive());
+        assertTrue(cardholder.getCardNetworks().isEmpty());
     }
 
     @Test
-    public void shouldRejectCardholderDTOWhenFirstNameIsBlank() {
+    void shouldThrowConstraintViolationException_whenFirstNameIsBlank() {
         CardholderDTO cardholder = new CardholderDTO();
-        cardholder.setFirstName("");
+        cardholder.setFirstName(""); // blank first name
         cardholder.setLastName("Doe");
         cardholder.setEmail("john.doe@example.com");
-        
-        var violations = validator.validate(cardholder);
-        assertFalse(violations.isEmpty(), "CardholderDTO should be invalid due to blank first name");
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    public void shouldRejectCardholderDTOWhenEmailIsInvalid() {
+    void shouldThrowConstraintViolationException_whenLastNameIsBlank() {
         CardholderDTO cardholder = new CardholderDTO();
         cardholder.setFirstName("John");
-        cardholder.setLastName("Doe");
-        cardholder.setEmail("invalid-email");
-        
-        var violations = validator.validate(cardholder);
-        assertFalse(violations.isEmpty(), "CardholderDTO should be invalid due to invalid email");
-    }
-
-    @Test
-    public void shouldRejectCardholderDTOWhenLastNameIsBlank() {
-        CardholderDTO cardholder = new CardholderDTO();
-        cardholder.setFirstName("John");
-        cardholder.setLastName("");
+        cardholder.setLastName(""); // blank last name
         cardholder.setEmail("john.doe@example.com");
-        
-        var violations = validator.validate(cardholder);
-        assertFalse(violations.isEmpty(), "CardholderDTO should be invalid due to blank last name");
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
     }
 
     @Test
-    public void shouldRejectCardholderDTOWhenEmailIsNull() {
+    void shouldThrowConstraintViolationException_whenEmailIsBlank() {
         CardholderDTO cardholder = new CardholderDTO();
         cardholder.setFirstName("John");
         cardholder.setLastName("Doe");
-        cardholder.setEmail(null);
-        
+        cardholder.setEmail(""); // blank email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldThrowConstraintViolationException_whenEmailIsInvalid() {
+        CardholderDTO cardholder = new CardholderDTO();
+        cardholder.setFirstName("John");
+        cardholder.setLastName("Doe");
+        cardholder.setEmail("invalid-email"); // invalid email
+
+        assertThrows(javax.validation.ConstraintViolationException.class, () -> validate(cardholder));
+    }
+
+    @Test
+    void shouldSetCardNetworks_whenProvided() {
+        CardholderDTO cardholder = new CardholderDTO();
+        CardNetworkDTO network = new CardNetworkDTO();
+        network.setId(1L);  // Assuming there's a setId method for CardNetworkDTO
+        cardholder.setCardNetworks(singletonList(network));
+
+        assertNotNull(cardholder.getCardNetworks());
+        assertEquals(1, cardholder.getCardNetworks().size());
+        assertEquals(1L, cardholder.getCardNetworks().get(0).getId());
+    }
+
+    private void validate(CardholderDTO cardholder) {
         var violations = validator.validate(cardholder);
-        assertFalse(violations.isEmpty(), "CardholderDTO should be invalid due to null email");
+        if (!violations.isEmpty()) {
+            throw new javax.validation.ConstraintViolationException(violations);
+        }
     }
 }
