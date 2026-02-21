@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "48"
+  PR_AGENT_TEMPLATE_VERSION: "49"
 
 jobs:
   run-tests:
@@ -401,7 +401,7 @@ jobs:
             FUNC_RC=0
             INT_RC=0
             echo "=== Phase A: Unit tests ==="
-            mvn test -Dtest="!*FunctionalTest,!*IntegrationTest" -DfailIfNoTests=false 2>&1 | tee pr-agent-artifacts/mvn-unit.log || UNIT_RC=$?
+            mvn test -Dtest="!*FunctionalTest,!*IntegrationTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-unit.log || UNIT_RC=$?
             # Phase B: functional tests (*FunctionalTest)
             echo "=== Phase B: Functional tests ==="
             mvn test -Dtest="*FunctionalTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-functional.log || FUNC_RC=$?
