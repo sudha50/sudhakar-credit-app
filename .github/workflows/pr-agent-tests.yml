@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "50"
+  PR_AGENT_TEMPLATE_VERSION: "51"
 
 jobs:
   run-tests:
@@ -846,13 +846,21 @@ jobs:
         run: |
           set -euo pipefail
           BODY='${{ steps.callback_payload.outputs.body }}'
-          SIG=$(echo -n "$BODY" | python3 <<'PYEOF'
+          # Use a temporary file to avoid pipe issues
+          echo "$BODY" > /tmp/callback_body.json
+          SIG=$(python3 <<'PYEOF'
           import hmac, hashlib, os, sys
-          secret = os.environ['CALLBACK_SECRET'].encode()
-          body = sys.stdin.read().encode()
-          print(hmac.new(secret, body, hashlib.sha256).hexdigest())
+          try:
+              secret = os.environ['CALLBACK_SECRET'].encode()
+              with open('/tmp/callback_body.json', 'r') as f:
+                  body = f.read().encode()
+              print(hmac.new(secret, body, hashlib.sha256).hexdigest())
+          except Exception as e:
+              print(f"Error generating signature: {e}", file=sys.stderr)
+              sys.exit(1)
           PYEOF
           )
+          rm -f /tmp/callback_body.json
           curl -sS -X POST \
             -H "Content-Type: application/json" \
             -H "X-PR-Agent-Signature: sha256=$SIG" \
