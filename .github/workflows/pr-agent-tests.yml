@@ -25,7 +25,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "58"
+  PR_AGENT_TEMPLATE_VERSION: "59"
 
 jobs:
   run-tests:
@@ -846,8 +846,8 @@ jobs:
         run: |
           set -euo pipefail
           BODY='${{ steps.callback_payload.outputs.body }}'
-          # Use a temporary file to avoid pipe issues and preserve exact JSON
-          echo "$BODY" > /tmp/callback_body.json
+          # Use printf to avoid adding newline
+          printf '%s' "$BODY" > /tmp/callback_body.json
           SIG=$(python3 <<'PYEOF'
           import hmac, hashlib, os, sys, json
           try:
