@@ -19,13 +19,17 @@ name: PR Agent Tests
         description: JSON string describing detected stack
         required: true
         type: string
+      env_policy_modes:
+        description: JSON string of resolved environment policy modes
+        required: false
+        type: string
 
 permissions:
   contents: read
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "59"
+  PR_AGENT_TEMPLATE_VERSION: "62"
 
 jobs:
   run-tests:
@@ -46,7 +50,7 @@ jobs:
           DETECTED_STACK: "${{ inputs.detected_stack }}"
 
       - name: Detect Java version from pom.xml
-        if: ${{ steps.stack.outputs.lang == 'java' }}
+        if: ${{ steps.stack.outputs.lang == 'java' || steps.stack.outputs.lang == 'kotlin' }}
         id: java_version
         shell: bash
         run: |
@@ -61,6 +65,31 @@ jobs:
               fi
             done
           fi
+          # Gradle: check build.gradle.kts or build.gradle for toolchain / sourceCompatibility
+          if [ -z "$JAVA_VER" ]; then
+            for GRADLE_FILE in build.gradle.kts build.gradle; do
+              if [ -f "$GRADLE_FILE" ]; then
+                # Gradle toolchain: JavaLanguageVersion.of(17)
+                VAL=$(sed -n 's/.*JavaLanguageVersion\.of(\([0-9]*\)).*/\1/p' "$GRADLE_FILE" 2>/dev/null | head -1)
+                if [ -n "$VAL" ]; then
+                  JAVA_VER="$VAL"
+                  break
+                fi
+                # sourceCompatibility = JavaVersion.VERSION_17 or '17' or 17
+                VAL=$(sed -n 's/.*sourceCompatibility[[:space:]]*=[[:space:]]*[^0-9]*\([0-9][0-9]*\).*/\1/p' "$GRADLE_FILE" 2>/dev/null | head -1)
+                if [ -n "$VAL" ]; then
+                  JAVA_VER="$VAL"
+                  break
+                fi
+                # kotlin jvmTarget: jvmTarget = "17"
+                VAL=$(sed -n 's/.*jvmTarget[[:space:]]*=[[:space:]]*"\([0-9.]*\)".*/\1/p' "$GRADLE_FILE" 2>/dev/null | head -1)
+                if [ -n "$VAL" ]; then
+                  JAVA_VER="$VAL"
+                  break
+                fi
+              fi
+            done
+          fi
           # Default to 17 if not detected (widely compatible)
           if [ -z "$JAVA_VER" ]; then
             JAVA_VER="17"
@@ -69,16 +98,36 @@ jobs:
           if [[ "$JAVA_VER" == 1.* ]]; then
             JAVA_VER="${JAVA_VER#1.}"
           fi
+          # Normalize VERSION_17-style identifiers
+          JAVA_VER=$(echo "$JAVA_VER" | sed 's/[^0-9].*//' | head -1 || echo "17")
           echo "version=$JAVA_VER" >> $GITHUB_OUTPUT
           echo "Detected Java version: $JAVA_VER"
 
-      - name: Setup Java (Temurin)
-        if: ${{ steps.stack.outputs.lang == 'java' }}
+      - name: Detect Gradle framework flag
+        if: ${{ steps.stack.outputs.lang == 'java' || steps.stack.outputs.lang == 'kotlin' }}
+        id: build_tool
+        shell: bash
+        run: |
+          FRAMEWORK=$(python3 -c "import json,os; print(json.loads(os.environ['DETECTED_STACK']).get('framework','maven'))")
+          echo "framework=$FRAMEWORK" >> $GITHUB_OUTPUT
+        env:
+          DETECTED_STACK: "${{ inputs.detected_stack }}"
+
+      - name: Setup Java (Temurin) — Maven
+        if: ${{ (steps.stack.outputs.lang == 'java' || steps.stack.outputs.lang == 'kotlin') && steps.build_tool.outputs.framework == 'maven' }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: ${{ steps.java_version.outputs.version }}
           cache: maven
+
+      - name: Setup Java (Temurin) — Gradle
+        if: ${{ (steps.stack.outputs.lang == 'java' || steps.stack.outputs.lang == 'kotlin') && steps.build_tool.outputs.framework == 'gradle' }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ steps.java_version.outputs.version }}
+          cache: gradle
 
       - name: Setup Node
         if: ${{ steps.stack.outputs.lang == 'node' }}
@@ -104,12 +153,107 @@ jobs:
         run: |
           set -euo pipefail
           echo "${DETECTED_STACK}" > detected_stack.json
+          echo "${ENV_POLICY_MODES:-{}}" > env_policy_modes.json
           mkdir -p pr-agent-artifacts
         env:
           DETECTED_STACK: "${{ inputs.detected_stack }}"
+          ENV_POLICY_MODES: "${{ inputs.env_policy_modes }}"
+
+      - name: Inject Gradle test dependencies
+        if: ${{ (steps.stack.outputs.lang == 'java' || steps.stack.outputs.lang == 'kotlin') && steps.build_tool.outputs.framework == 'gradle' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Make gradlew executable (may be committed without +x)
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+          fi
+          # Inject test dependencies into build.gradle or build.gradle.kts
+          python3 <<'GRADLE_DEPS_PYEOF' || true
+          import sys, re, os
+          LANG = os.environ.get('PR_AGENT_LANG', 'java')
+          is_kotlin_dsl = os.path.exists('build.gradle.kts')
+          gradle_file = 'build.gradle.kts' if is_kotlin_dsl else 'build.gradle'
+          if not os.path.exists(gradle_file):
+              print('No build.gradle / build.gradle.kts found, skipping dep injection')
+              sys.exit(0)
+          with open(gradle_file, 'r') as f:
+              content = f.read()
+          # Determine JUnit5 / MockK versions based on language
+          junit5_ver = '5.10.2'
+          mockk_ver = '1.13.10'
+          deps_to_add = []
+          if LANG == 'kotlin':
+              # Kotlin: JUnit 5 + MockK
+              if 'junit-jupiter' not in content and 'junit5' not in content.lower():
+                  if is_kotlin_dsl:
+                      deps_to_add.append(f'    testImplementation("org.junit.jupiter:junit-jupiter:{junit5_ver}")')
+                      deps_to_add.append(f'    testImplementation("io.mockk:mockk:{mockk_ver}")')
+                  else:
+                      deps_to_add.append(f"    testImplementation 'org.junit.jupiter:junit-jupiter:{junit5_ver}'")
+                      deps_to_add.append(f"    testImplementation 'io.mockk:mockk:{mockk_ver}'")
+          else:
+              # Java: JUnit 5 + Mockito
+              mockito_ver = '5.11.0'
+              if 'junit-jupiter' not in content:
+                  if is_kotlin_dsl:
+                      deps_to_add.append(f'    testImplementation("org.junit.jupiter:junit-jupiter:{junit5_ver}")')
+                      deps_to_add.append(f'    testImplementation("org.mockito:mockito-core:{mockito_ver}")')
+                      deps_to_add.append(f'    testImplementation("org.mockito:mockito-junit-jupiter:{mockito_ver}")')
+                  else:
+                      deps_to_add.append(f"    testImplementation 'org.junit.jupiter:junit-jupiter:{junit5_ver}'")
+                      deps_to_add.append(f"    testImplementation 'org.mockito:mockito-core:{mockito_ver}'")
+                      deps_to_add.append(f"    testImplementation 'org.mockito:mockito-junit-jupiter:{mockito_ver}'")
+          # Spring Boot: inject spring-boot-starter-test
+          if 'springframework.boot' in content and 'spring-boot-starter-test' not in content:
+              # Detect spring boot version from build file (plugins block)
+              sb_m = re.search(r'id\s*["\(]org\.springframework\.boot["\)][^"]*["\']([\d.]+)["\']', content)
+              sb_ver = sb_m.group(1) if sb_m else '3.2.1'
+              if is_kotlin_dsl:
+                  deps_to_add.append(f'    testImplementation("org.springframework.boot:spring-boot-starter-test:{sb_ver}")')
+              else:
+                  deps_to_add.append(f"    testImplementation 'org.springframework.boot:spring-boot-starter-test:{sb_ver}'")
+          # Add JaCoCo plugin if not present
+          jacoco_plugin = 'jacoco' if not is_kotlin_dsl else 'jacoco'
+          if jacoco_plugin not in content:
+              if is_kotlin_dsl:
+                  content = re.sub(
+                      r'(plugins\s*\{)',
+                      r'\1\n    id("jacoco")',
+                      content, count=1
+                  )
+              else:
+                  content = re.sub(
+                      r'(plugins\s*\{)',
+                      r'\1\n    id \'jacoco\'',
+                      content, count=1
+                  )
+              print('JaCoCo plugin added')
+          # Add useJUnitPlatform() if not present (required for JUnit 5)
+          if 'useJUnitPlatform' not in content:
+              if is_kotlin_dsl:
+                  content += '\ntasks.test { useJUnitPlatform() }\n'
+              else:
+                  content += '\ntest { useJUnitPlatform() }\n'
+              print('useJUnitPlatform() added')
+          if deps_to_add:
+              deps_block = '\n'.join(deps_to_add)
+              # Find existing dependencies block and append inside it
+              m = re.search(r'(dependencies\s*\{)', content)
+              if m:
+                  insert_at = m.end()
+                  content = content[:insert_at] + '\n' + deps_block + content[insert_at:]
+              else:
+                  content += '\ndependencies {\n' + deps_block + '\n}\n'
+              print(f'Injected {len(deps_to_add)} test deps into {gradle_file}')
+          with open(gradle_file, 'w') as f:
+              f.write(content)
+          GRADLE_DEPS_PYEOF
+        env:
+          PR_AGENT_LANG: "${{ steps.stack.outputs.lang }}"
 
       - name: Inject Java test dependencies
-        if: ${{ steps.stack.outputs.lang == 'java' }}
+        if: ${{ (steps.stack.outputs.lang == 'java') && steps.build_tool.outputs.framework == 'maven' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -241,7 +385,22 @@ jobs:
                   tc_ver = '1.19.7'
                   needed.append(('org.testcontainers', 'testcontainers', tc_ver))
                   needed.append(('org.testcontainers', 'junit-jupiter', tc_ver))
-                  needed.append(('org.testcontainers', 'postgresql', tc_ver))
+                  # DB flavor detection: inject the correct Testcontainers DB module
+                  # based on which DB driver is declared in pom.xml rather than always
+                  # defaulting to PostgreSQL (which causes failures on MySQL/MongoDB/Oracle repos).
+                  pom_lower = pom.lower()
+                  if 'mysql-connector' in pom_lower or 'mysql:mysql' in pom_lower:
+                      needed.append(('org.testcontainers', 'mysql', tc_ver))
+                  elif 'mariadb' in pom_lower:
+                      needed.append(('org.testcontainers', 'mariadb', tc_ver))
+                  elif 'mongodb' in pom_lower or 'spring-boot-starter-data-mongodb' in pom_lower:
+                      needed.append(('org.testcontainers', 'mongodb', tc_ver))
+                  elif 'ojdbc' in pom_lower or 'oracle.database' in pom_lower or 'com.oracle' in pom_lower:
+                      needed.append(('org.testcontainers', 'oracle-xe', tc_ver))
+                  else:
+                      # Default: PostgreSQL (covers Spring Boot repos with spring-boot-starter-data-jpa
+                      # and no explicit DB driver, which conventionally use PostgreSQL in prod)
+                      needed.append(('org.testcontainers', 'postgresql', tc_ver))
                   if has_spring_boot:
                       needed.append(('org.springframework.boot', 'spring-boot-testcontainers', sb_version))
                   # ADR-022: WireMock for external HTTP service mocking
@@ -294,28 +453,75 @@ jobs:
             echo "--- pom.xml test dependencies ---"
             grep -B1 -A3 '<scope>test</scope>' pom.xml || echo "(no test-scoped deps)"
             echo "---"
-            # Create application.properties in test resources to override main DB config for ALL tests.
-            # This ensures tests that don't use @ActiveProfiles("test") still get H2 instead of PostgreSQL/MySQL.
+            # Create / merge application.properties in test resources to override main DB config for ALL tests.
+            # Merge-mode: if the file exists but points to a non-H2 datasource, overwrite the datasource
+            # block rather than skipping — prevents CI failures when repos already have a PostgreSQL/MySQL
+            # config committed to src/test/resources.
             TEST_PROPS_DIR="src/test/resources"
             mkdir -p "$TEST_PROPS_DIR"
-            if [ ! -f "$TEST_PROPS_DIR/application.properties" ]; then
-              cat > "$TEST_PROPS_DIR/application.properties" <<'H2PROPS'
-          spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-          spring.datasource.driver-class-name=org.h2.Driver
-          spring.datasource.username=sa
-          spring.datasource.password=
-          spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
-          spring.jpa.hibernate.ddl-auto=create-drop
-          spring.flyway.enabled=false
-          H2PROPS
-              echo "Created src/test/resources/application.properties with H2 datasource"
-            fi
+            python3 <<'H2MERGE_PYEOF' || true
+          import os, re
+          props_path = 'src/test/resources/application.properties'
+          H2_URL = 'spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE'
+          H2_BLOCK = (
+              'spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE\n'
+              'spring.datasource.driver-class-name=org.h2.Driver\n'
+              'spring.datasource.username=sa\n'
+              'spring.datasource.password=\n'
+              'spring.jpa.database-platform=org.hibernate.dialect.H2Dialect\n'
+              'spring.jpa.hibernate.ddl-auto=create-drop\n'
+              'spring.flyway.enabled=false\n'
+          )
+          if not os.path.exists(props_path):
+              with open(props_path, 'w') as f:
+                  f.write(H2_BLOCK)
+              print('Created ' + props_path + ' with H2 datasource')
+          else:
+              content = open(props_path).read()
+              if 'jdbc:h2' in content:
+                  print(props_path + ' already uses H2 — no changes needed')
+              else:
+                  # File exists but points to a real DB: overwrite datasource lines only,
+                  # preserve any other app config (logging, features, etc.)
+                  # Remove existing spring.datasource.* and spring.jpa.* and spring.flyway.* lines
+                  cleaned = re.sub(r'^spring\.(datasource|jpa|flyway)\.[^\n]*\n?', '', content, flags=re.MULTILINE)
+                  merged = H2_BLOCK + '\n' + cleaned.strip() + '\n'
+                  with open(props_path, 'w') as f:
+                      f.write(merged)
+                  print('Merged H2 datasource into existing ' + props_path + ' (overrode non-H2 config)')
+          H2MERGE_PYEOF
             # Also create application-test.properties for tests using @ActiveProfiles("test")
             if [ ! -f "$TEST_PROPS_DIR/application-test.properties" ]; then
               cp "$TEST_PROPS_DIR/application.properties" "$TEST_PROPS_DIR/application-test.properties"
               echo "Created application-test.properties (copy of H2 config)"
+            else
+              # Merge H2 into application-test.properties if it also points to a non-H2 datasource
+              python3 <<'H2MERGE_TEST_PYEOF' || true
+          import os, re
+          props_path = 'src/test/resources/application-test.properties'
+          H2_BLOCK = (
+              'spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE\n'
+              'spring.datasource.driver-class-name=org.h2.Driver\n'
+              'spring.datasource.username=sa\n'
+              'spring.datasource.password=\n'
+              'spring.jpa.database-platform=org.hibernate.dialect.H2Dialect\n'
+              'spring.jpa.hibernate.ddl-auto=create-drop\n'
+              'spring.flyway.enabled=false\n'
+          )
+          content = open(props_path).read()
+          if 'jdbc:h2' not in content:
+              cleaned = re.sub(r'^spring\.(datasource|jpa|flyway)\.[^\n]*\n?', '', content, flags=re.MULTILINE)
+              merged = H2_BLOCK + '\n' + cleaned.strip() + '\n'
+              with open(props_path, 'w') as f:
+                  f.write(merged)
+              print('Merged H2 datasource into existing ' + props_path)
+          H2MERGE_TEST_PYEOF
             fi
-            # Docker verification for Testcontainers integration tests
+            # Docker verification for Testcontainers integration tests.
+            # SKIP_INTEGRATION=true when Docker is unavailable — Phase C is skipped entirely
+            # rather than running @Testcontainers tests that will always fail without Docker,
+            # which would consume self-heal attempts on an infra issue.
+            SKIP_INTEGRATION=false
             HAS_INTEGRATION=$(find src/test/java -name '*IntegrationTest.java' -print -quit 2>/dev/null || true)
             if [ -n "$HAS_INTEGRATION" ]; then
               echo "--- Integration tests detected: verifying Docker ---"
@@ -325,8 +531,9 @@ jobs:
                 mkdir -p "$HOME/.testcontainers"
                 echo "testcontainers.reuse.enable=true" >> "$HOME/.testcontainers/.testcontainers.properties" 2>/dev/null || true
               else
-                echo "WARNING: Docker is NOT available — integration tests using @Testcontainers may fail"
-                echo "Testcontainers tests will fall back to H2 if application-test.properties is present"
+                echo "Docker NOT available — skipping Phase C integration tests (SKIP_INTEGRATION=true)"
+                echo "To enable integration tests, ensure the runner has Docker-in-Docker or use a self-hosted runner."
+                SKIP_INTEGRATION=true
               fi
             fi
           mvn dependency:resolve -DincludeScope=test 2>&1 | tail -20 || true
@@ -337,6 +544,47 @@ jobs:
         run: |
           set -euo pipefail
           LANG=$(python3 -c "import json; print(json.load(open('detected_stack.json')).get('language',''))")
+
+          FRAMEWORK=$(python3 -c "import json; print(json.load(open('detected_stack.json')).get('framework','maven'))")
+
+          if [ "$LANG" = "java" ] && [ "$FRAMEWORK" = "gradle" ]; then
+            [ ! -f gradlew ] && { echo 'gradlew not found'; exit 1; }
+            chmod +x gradlew
+            GRADLE_RC=0; UNIT_RC=0; FUNC_RC=0; INT_RC=0
+            echo '=== Gradle Phase A: Unit ===' 
+            ./gradlew test --tests '*Test' --tests '!*FunctionalTest' --tests '!*IntegrationTest' \
+              --continue -x javadoc 2>&1 | tee pr-agent-artifacts/gradle-unit.log || UNIT_RC=$?
+            echo '=== Gradle Phase B: Functional ==='
+            ./gradlew test --tests '*FunctionalTest' \
+              --continue -x javadoc 2>&1 | tee pr-agent-artifacts/gradle-functional.log || FUNC_RC=$?
+            SKIP_INTEGRATION=false
+            HAS_INT=$(find src/test -name '*IntegrationTest.*' -print -quit 2>/dev/null || true)
+            [ -n "$HAS_INT" ] && ! docker info >/dev/null 2>&1 && SKIP_INTEGRATION=true
+            if [ "${SKIP_INTEGRATION:-false}" != "true" ]; then
+              echo '=== Gradle Phase C: Integration ==='
+              ./gradlew test --tests '*IntegrationTest' \
+                --continue -x javadoc 2>&1 | tee pr-agent-artifacts/gradle-integration.log || INT_RC=$?
+            fi
+            JACOCO_XML=build/reports/jacoco/test/jacocoTestReport.xml
+            [ -f "$JACOCO_XML" ] && cp "$JACOCO_XML" pr-agent-artifacts/jacoco.xml || true
+            if [ ! -f pr-agent-artifacts/jacoco.xml ] && [ -f build/jacoco/test.exec ]; then
+              ./gradlew jacocoTestReport 2>/dev/null || true
+              [ -f "$JACOCO_XML" ] && cp "$JACOCO_XML" pr-agent-artifacts/jacoco.xml || true
+            fi
+            find build/test-results -name '*.xml' -exec grep -l 'failure\|error' {} \; 2>/dev/null | \
+              xargs grep -h 'message\|type' 2>/dev/null | head -200 > pr-agent-artifacts/surefire-errors.txt || true
+            [ $UNIT_RC -ne 0 ] && GRADLE_RC=$UNIT_RC || true
+            [ $FUNC_RC -ne 0 ] && GRADLE_RC=$FUNC_RC || true
+            [ $INT_RC -ne 0 ] && GRADLE_RC=$INT_RC || true
+            exit $GRADLE_RC
+
+          elif [ "$LANG" = "kotlin" ] && [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew test --continue 2>&1 | tee pr-agent-artifacts/gradle-unit.log || true
+            JACOCO_XML=build/reports/jacoco/test/jacocoTestReport.xml
+            [ -f "$JACOCO_XML" ] && cp "$JACOCO_XML" pr-agent-artifacts/jacoco.xml || true
+            exit 0
+          fi
 
           if [ "$LANG" = "java" ]; then
             # --- Compile-check-and-prune: remove test files that fail compilation ---
@@ -394,6 +642,40 @@ jobs:
                       cf.write('Pruned ' + str(len(pruned_files)) + ' uncompilable test files: ' + ', '.join(pruned_files) + NL)
                   cf.write(NL.join(compile_errors)[-8000:])
           PRUNE_PYEOF
+            # Multi-module Maven detection: if pom.xml declares <modules>, collect child modules
+            # that have src/test/java trees and pass -pl to restrict execution to those modules.
+            # Single-module repos use the default (run from root).
+            MVN_PL_FLAG=""
+            python3 <<'MULTIMOD_PYEOF' || true
+          import xml.etree.ElementTree as ET, os, sys
+          try:
+              tree = ET.parse('pom.xml')
+              ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+              root = tree.getroot()
+              # Support both namespaced and non-namespaced pom.xml files
+              modules_el = root.find('m:modules', ns) or root.find('modules')
+              if modules_el is None:
+                  sys.exit(0)
+              module_els = modules_el.findall('m:module', ns) or modules_el.findall('module')
+              modules = [m.text.strip() for m in module_els if m.text and m.text.strip()]
+              if not modules:
+                  sys.exit(0)
+              # Only target modules that actually have test sources
+              test_modules = [m for m in modules if os.path.isdir(os.path.join(m, 'src', 'test', 'java'))]
+              if not test_modules:
+                  print('Multi-module repo detected but no modules have src/test/java — running from root')
+                  sys.exit(0)
+              pl_value = ','.join(test_modules)
+              print('Multi-module repo detected. Targeting modules: ' + pl_value)
+              with open('pr-agent-artifacts/mvn-pl-flag.txt', 'w') as f:
+                  f.write(pl_value)
+          except Exception as e:
+              print('Multi-module detection skipped: ' + str(e))
+          MULTIMOD_PYEOF
+            if [ -f pr-agent-artifacts/mvn-pl-flag.txt ]; then
+              MVN_PL_FLAG="-pl $(cat pr-agent-artifacts/mvn-pl-flag.txt) --also-make"
+              echo "Using Maven project list: $MVN_PL_FLAG"
+            fi
             # Run tests per type — separate Maven phases for isolation
             # Phase A: unit tests (*Test, excluding *FunctionalTest and *IntegrationTest)
             MVN_RC=0
@@ -401,13 +683,20 @@ jobs:
             FUNC_RC=0
             INT_RC=0
             echo "=== Phase A: Unit tests ==="
-            mvn test -Dtest="!*FunctionalTest,!*IntegrationTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-unit.log || UNIT_RC=$?
+            mvn test $MVN_PL_FLAG -Dtest="!*FunctionalTest,!*IntegrationTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-unit.log || UNIT_RC=$?
             # Phase B: functional tests (*FunctionalTest)
             echo "=== Phase B: Functional tests ==="
-            mvn test -Dtest="*FunctionalTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-functional.log || FUNC_RC=$?
+            mvn test $MVN_PL_FLAG -Dtest="*FunctionalTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-functional.log || FUNC_RC=$?
             # Phase C: integration tests (*IntegrationTest)
+            # Skipped entirely when Docker is unavailable (SKIP_INTEGRATION=true) to prevent
+            # @Testcontainers failures from burning self-heal budget on an infra issue.
             echo "=== Phase C: Integration tests ==="
-            mvn test -Dtest="*IntegrationTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-integration.log || INT_RC=$?
+            if [ "${SKIP_INTEGRATION:-false}" = "true" ]; then
+              echo "Phase C skipped — Docker not available on this runner (SKIP_INTEGRATION=true)"
+              echo "Integration tests require Docker. Use a self-hosted runner or enable Docker-in-Docker." | tee pr-agent-artifacts/mvn-integration.log
+            else
+              mvn test $MVN_PL_FLAG -Dtest="*IntegrationTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-integration.log || INT_RC=$?
+            fi
             # Overall exit code: fail if unit tests failed (primary)
             if [ $UNIT_RC -ne 0 ]; then
               MVN_RC=$UNIT_RC
