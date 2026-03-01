@@ -29,7 +29,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "63"
+  PR_AGENT_TEMPLATE_VERSION: "64"
 
 jobs:
   run-tests:
@@ -1117,8 +1117,11 @@ jobs:
               "test_failures": test_failures[:50],
               "test_type_counts": test_type_counts,
           })
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f'body={body}\n')
+          # Write to a temp file so the callback step can sign and send from
+          # exactly the same bytes (GITHUB_OUTPUT truncates on newlines inside
+          # error_log, causing signature mismatch and a 401 from the agent).
+          with open('/tmp/pr_agent_callback.json', 'w') as f:
+              f.write(body)
           PYEOF
         env:
           RUN_ID: "${{ inputs.agent_run_id }}"
@@ -1134,27 +1137,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BODY='${{ steps.callback_payload.outputs.body }}'
-          # Use printf to avoid adding newline
-          printf '%s' "$BODY" > /tmp/callback_body.json
-          SIG=$(python3 <<'PYEOF'
-          import hmac, hashlib, os, sys, json
+          # Sign and send from the same file written by the build step to guarantee
+          # the HMAC is computed over exactly the bytes that curl will transmit.
+          SIG=$(python3 - <<'PYEOF'
+          import hmac, hashlib, os, sys
           try:
               secret = os.environ['CALLBACK_SECRET'].encode()
-              # Read the file exactly as written to preserve whitespace/newlines
-              with open('/tmp/callback_body.json', 'r') as f:
-                  body = f.read().encode()
+              with open('/tmp/pr_agent_callback.json', 'rb') as f:
+                  body = f.read()
               print(hmac.new(secret, body, hashlib.sha256).hexdigest())
           except Exception as e:
               print(f"Error generating signature: {e}", file=sys.stderr)
               sys.exit(1)
           PYEOF
           )
-          rm -f /tmp/callback_body.json
           curl -sS -X POST \
             -H "Content-Type: application/json" \
             -H "X-PR-Agent-Signature: sha256=$SIG" \
-            --data-binary "$BODY" \
+            --data-binary "@/tmp/pr_agent_callback.json" \
             "https://7jsur28fwi.execute-api.us-east-1.amazonaws.com/workflow-callback"
+          rm -f /tmp/pr_agent_callback.json
         env:
           CALLBACK_SECRET: "${{ secrets.PR_AGENT_CALLBACK_SECRET }}"
