@@ -30,7 +30,7 @@ public class CardNetworkServiceImpl implements CardNetworkService {
     @Transactional(readOnly = true)
     public CardNetworkDTO getCardNetworkById(Long id) {
         CardNetwork entity = cardNetworkRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Card network not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Card network not found..."));
         return cardNetworkMapper.toDTO(entity);
     }
 
