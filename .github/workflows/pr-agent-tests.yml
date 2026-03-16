@@ -29,7 +29,7 @@ permissions:
   id-token: write
 
 env:
-  PR_AGENT_TEMPLATE_VERSION: "64"
+  PR_AGENT_TEMPLATE_VERSION: "69"
 
 jobs:
   run-tests:
@@ -599,10 +599,17 @@ jobs:
           if not os.path.isdir(test_dir):
               print('No test directory, skipping compile check')
               sys.exit(0)
+          _sr=[];_sfx=[('ImplFT','FT'),('ImplIT','IT'),('ImplTest.java','Test.java'),('ImplFunctionalTest.java','FunctionalTest.java'),('ImplIntegrationTest.java','IntegrationTest.java')]
+          for _r,_,_fs in os.walk(test_dir):
+            for _f in list(_fs):
+              for _i,_c in _sfx:
+                if _f.endswith(_i) and os.path.isfile(os.path.join(_r,_f[:-len(_i)]+_c)):
+                  os.remove(os.path.join(_r,_f));_sr.append(_f);break
+          if _sr: print('P21-A removed '+str(len(_sr)))
           for attempt in range(1, MAX_ATTEMPTS + 1):
               print('=== Compile check attempt ' + str(attempt) + ' ===')
               result = subprocess.run(
-                  ['mvn', 'test-compile', '-q'],
+                  ['mvn', 'test-compile'],
                   capture_output=True, text=True, timeout=120
               )
               if result.returncode == 0:
@@ -610,6 +617,10 @@ jobs:
                   break
               output = result.stdout + NL + result.stderr
               compile_errors.append(output[-4000:])
+              # P22-A: Print ERROR lines before pruning so CI log exposes root symbol.
+              _errs = [ln for ln in output.split(NL) if '[ERROR]' in ln or 'error:' in ln.lower()]
+              for _e in _errs[:40]:
+                  print(_e)
               paths = set()
               for line in output.split(NL):
                   m = re.search(r'(/\S+\.java):\[', line)
@@ -697,6 +708,11 @@ jobs:
             else
               mvn test $MVN_PL_FLAG -Dtest="*IntegrationTest" -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false 2>&1 | tee pr-agent-artifacts/mvn-integration.log || INT_RC=$?
             fi
+            # P18-E: Anti-false-green firewall — detect zero functional/integration tests.
+            { [ -f pr-agent-artifacts/mvn-functional.log ] && ! grep -q 'Tests run:' pr-agent-artifacts/mvn-functional.log; } \
+              && echo "P18-E ZERO_FUNCTIONAL_TESTS: Removing uncompilable test Phase B ran 0 *FunctionalTest" >> pr-agent-artifacts/compile-errors.txt || true
+            { [ "${SKIP_INTEGRATION:-false}" != "true" ] && [ -f pr-agent-artifacts/mvn-integration.log ] && ! grep -q 'Tests run:' pr-agent-artifacts/mvn-integration.log; } \
+              && echo "P18-E ZERO_INTEGRATION_TESTS: Removing uncompilable test Phase C ran 0 *IntegrationTest" >> pr-agent-artifacts/compile-errors.txt || true
             # Overall exit code: fail if unit tests failed (primary)
             if [ $UNIT_RC -ne 0 ]; then
               MVN_RC=$UNIT_RC
@@ -939,10 +955,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Include surefire reports for self-heal diagnostics
-          if [ -d target/surefire-reports ]; then
-            cp -r target/surefire-reports pr-agent-artifacts/surefire-reports
-          fi
+          # Include surefire reports for self-heal diagnostics.
+          # Multi-module Maven repos have reports in module/target/surefire-reports/
+          # so we find ALL surefire-reports dirs and merge them into one flat directory.
+          mkdir -p pr-agent-artifacts/surefire-reports
+          find . -path '*/target/surefire-reports' -type d 2>/dev/null | while read -r SDIR; do
+            cp -n "$SDIR"/*.xml pr-agent-artifacts/surefire-reports/ 2>/dev/null || true
+            cp -n "$SDIR"/*.txt pr-agent-artifacts/surefire-reports/ 2>/dev/null || true
+          done
           ARTIFACT_KEY="pr-agent/${{ inputs.agent_run_id }}/artifacts"
           ARTIFACT_OBJECT_KEY="$ARTIFACT_KEY/pr-agent-artifacts.tgz"
           echo "artifact_key=$ARTIFACT_KEY" >> $GITHUB_OUTPUT
