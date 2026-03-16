@@ -48,7 +48,7 @@ public class OfferServiceImpl implements OfferService {
     @Transactional(readOnly = true)
     public OfferDTO getOfferById(Long id) {
         Offer offer = offerRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Offer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Offer not found.."));
         return offerMapper.toDTO(offer);
     }
 
