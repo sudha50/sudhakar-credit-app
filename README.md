@@ -1,6 +1,6 @@
 # Offer Management System (Card Offers)
 
-## Overview
+## Overview:
 A Spring Boot (3.2+), Java 21 REST API for managing card offers, merchants, card networks, and cardholder eligibility. Uses PostgreSQL (Flyway migrations) and Redis for caching.
 
 ## Tech Stack

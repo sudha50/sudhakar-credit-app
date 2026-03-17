@@ -1,0 +1,151 @@
+package com.cardoffers.oms.controller;
+
+import org.mockito.Mock;
+import org.mockito.Mockito;
+import static org.mockito.Mockito.when;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.annotation.DirtiesContext;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import com.cardoffers.oms.controller.CardNetworkController;
+import com.cardoffers.oms.model.dto.CardNetworkDTO;
+import com.cardoffers.oms.service.CardNetworkService;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.validation.annotation.Validated;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import com.cardoffers.oms.exception.ResourceNotFoundException;
+
+@WebMvcTest(CardNetworkController.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@ActiveProfiles("test")
+class CardNetworkControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private CardNetworkService cardNetworkService;
+
+    @Test
+void shouldGetAllCardNetworks_returns200() throws Exception {
+    // Given
+    CardNetworkDTO cardNetwork1 = new CardNetworkDTO();
+    cardNetwork1.setId(1L);
+    cardNetwork1.setName("Visa");
+    cardNetwork1.setCode("V");
+    cardNetwork1.setActive(true);
+
+    CardNetworkDTO cardNetwork2 = new CardNetworkDTO();
+    cardNetwork2.setId(2L);
+    cardNetwork2.setName("MasterCard");
+    cardNetwork2.setCode("MC");
+    cardNetwork2.setActive(true);
+
+    List<CardNetworkDTO> cardNetworks = Arrays.asList(cardNetwork1, cardNetwork2);
+    when(cardNetworkService.getAllCardNetworks()).thenReturn(cardNetworks);
+
+    // When
+    mockMvc.perform(get("/api/v1/card-networks"))
+        // Then
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].id").value(1L))
+        .andExpect(jsonPath("$[0].name").value("Visa"))
+        .andExpect(jsonPath("$[0].code").value("V"))
+        .andExpect(jsonPath("$[0].active").value(true))
+        .andExpect(jsonPath("$[1].id").value(2L))
+        .andExpect(jsonPath("$[1].name").value("MasterCard"))
+        .andExpect(jsonPath("$[1].code").value("MC"))
+        .andExpect(jsonPath("$[1].active").value(true));
+}
+
+    @Test
+void shouldGetCardNetworkById_returns200() throws Exception {
+    // Given
+    CardNetworkDTO cardNetworkDTO = new CardNetworkDTO();
+    cardNetworkDTO.setId(1L);
+    cardNetworkDTO.setName("Visa");
+    cardNetworkDTO.setCode("VISA");
+    cardNetworkDTO.setActive(true);
+    when(cardNetworkService.getCardNetworkById(1L)).thenReturn(cardNetworkDTO);
+
+    // When
+    mockMvc.perform(get("/api/v1/card-networks/{id}", 1L))
+        // Then
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(1L))
+        .andExpect(jsonPath("$.name").value("Visa"))
+        .andExpect(jsonPath("$.code").value("VISA"))
+        .andExpect(jsonPath("$.active").value(true));
+}
+
+    @Test
+void shouldGetCardNetworkById_returns404_notFound() throws Exception {
+    // Given
+    Long nonExistentId = 999L;
+    when(cardNetworkService.getCardNetworkById(nonExistentId)).thenThrow(new ResourceNotFoundException("Not found"));
+
+    // When
+    mockMvc.perform(get("/api/v1/card-networks/{id}", nonExistentId))
+        // Then
+        .andExpect(status().isNotFound());
+}
+
+    @Test
+void shouldGetCardNetworkByCode_returns200() throws Exception {
+    // Given
+    CardNetworkDTO cardNetworkDTO = new CardNetworkDTO();
+    cardNetworkDTO.setId(1L);
+    cardNetworkDTO.setName("Visa");
+    cardNetworkDTO.setCode("VISA");
+    cardNetworkDTO.setActive(true);
+    when(cardNetworkService.getCardNetworkByCode("VISA")).thenReturn(cardNetworkDTO);
+
+    // When
+    mockMvc.perform(get("/api/v1/card-networks/code/VISA"))
+        // Then
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").value(1L))
+        .andExpect(jsonPath("$.name").value("Visa"))
+        .andExpect(jsonPath("$.code").value("VISA"))
+        .andExpect(jsonPath("$.active").value(true));
+}
+
+    @Test
+void shouldGetCardNetworkByCode_returns404_notFound() throws Exception {
+    // Given
+    String code = "nonExistentCode";
+    when(cardNetworkService.getCardNetworkByCode(code)).thenThrow(new ResourceNotFoundException("Card network not found"));
+
+    // When
+    mockMvc.perform(get("/api/v1/card-networks/code/{code}", code))
+        // Then
+        .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+}
+
+}
