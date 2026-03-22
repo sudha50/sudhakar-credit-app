@@ -55,7 +55,7 @@ public class OfferEligibilityServiceImpl implements OfferEligibilityService {
                 .findByCardholderIdAndActiveTrue(cardholderId);
 
         if (activeCards.isEmpty()) {
-            throw new CardholderNotEligibleException("Cardholder has no active cards");
+            throw new CardholderNotEligibleException("Cardholder has no active cards.");
         }
 
         Set<Long> cardNetworkIds = activeCards.stream()
